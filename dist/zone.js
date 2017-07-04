@@ -2002,7 +2002,11 @@ function propertyDescriptorPatch(_global) {
     else {
         // Safari, Android browsers (Jelly Bean)
         patchViaCapturingAllTheEvents();
-        patchClass('XMLHttpRequest');
+        // BEGIN IQFY Patch - do not path XMLHttpRequest when running tests
+        if (!window.testsAreRunning) {
+            patchClass('XMLHttpRequest');
+        }
+        // END IQFY Patch
         if (supportsWebSocket) {
             apply(_global);
         }

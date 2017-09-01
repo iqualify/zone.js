@@ -11,7 +11,7 @@ import './events';
 import './fs';
 
 import {patchTimer} from '../common/timers';
-import {findEventTask, patchMacroTask, patchMicroTask, zoneSymbol} from '../common/utils';
+import {patchMacroTask, patchMethod, patchMicroTask} from '../common/utils';
 
 const set = 'set';
 const clear = 'clear';
@@ -33,7 +33,6 @@ if (shouldPatchGlobalTimers) {
 
 // patch process related methods
 patchProcess();
-handleUnhandledPromiseRejection();
 
 // Crypto
 let crypto;
@@ -68,28 +67,4 @@ function patchProcess() {
       target: process
     };
   });
-}
-
-// handle unhandled promise rejection
-function findProcessPromiseRejectionHandler(evtName: string) {
-  return function(e: any) {
-    const eventTasks = findEventTask(process, evtName);
-    eventTasks.forEach(eventTask => {
-      // process has added unhandledrejection event listener
-      // trigger the event listener
-      if (evtName === 'unhandledRejection') {
-        eventTask.invoke(e.rejection, e.promise);
-      } else if (evtName === 'rejectionHandled') {
-        eventTask.invoke(e.promise);
-      }
-    });
-  };
-}
-
-function handleUnhandledPromiseRejection() {
-  Zone[zoneSymbol('unhandledPromiseRejectionHandler')] =
-      findProcessPromiseRejectionHandler('unhandledRejection');
-
-  Zone[zoneSymbol('rejectionHandledHandler')] =
-      findProcessPromiseRejectionHandler('rejectionHandled');
 }

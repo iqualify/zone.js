@@ -9,10 +9,10 @@
   "dependencies": {},
   "description": "Zones for JavaScript",
   "devDependencies": {
-    "@types/jasmine": "2.2.33",
+    "@types/jasmine": "^2.2.33",
     "@types/node": "^6.0.38",
     "@types/systemjs": "^0.19.30",
-    "clang-format": "1.0.46",
+    "clang-format": "^1.0.46",
     "concurrently": "^2.2.0",
     "conventional-changelog": "^1.1.0",
     "es6-promise": "^3.0.2",
@@ -43,7 +43,7 @@
     "ts-loader": "^0.6.0",
     "tslint": "^4.1.1",
     "tslint-eslint-rules": "^3.1.0",
-    "typescript": "2.0.10",
+    "typescript": "^2.0.2",
     "vrsource-tslint-rules": "^4.0.0",
     "whatwg-fetch": "^2.0.1"
   },
@@ -52,14 +52,14 @@
     "test": "test"
   },
   "dist": {
-    "shasum": "4f3fe8834d44597f2639053a0fa438df34fffded",
-    "tarball": "https://registry.npmjs.org/zone.js/-/zone.js-0.7.8.tgz"
+    "shasum": "0d7b7ae7f68012d03438b8a18f5763441bbf9620",
+    "tarball": "https://registry.npmjs.org/zone.js/-/zone.js-0.7.7.tgz"
   },
   "files": [
     "lib",
     "dist"
   ],
-  "gitHead": "ce47cfbae27f8dff1e6db1c098229e25d3d088f0",
+  "gitHead": "8af21b5a48f647059780cb1721cbb9fc064508c7",
   "homepage": "https://github.com/angular/zone.js#readme",
   "license": "MIT",
   "main": "dist/zone-node.js",
@@ -106,5 +106,5 @@
     "ws-server": "node ./test/ws-server.js"
   },
   "typings": "dist/zone.js.d.ts",
-  "version": "0.7.8"
+  "version": "0.7.7"
 }

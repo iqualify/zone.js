@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {isBrowser, isMix, isNode, patchClass, patchOnProperties, zoneSymbol} from '../common/utils';
+import {isBrowser, isNode, patchClass, patchOnProperties, zoneSymbol} from '../common/utils';
 
 import * as webSocketPatch from './websocket';
 
@@ -15,7 +15,7 @@ const eventNames =
         .split(' ');
 
 export function propertyDescriptorPatch(_global) {
-  if (isNode && !isMix) {
+  if (isNode) {
     return;
   }
 
@@ -40,13 +40,7 @@ export function propertyDescriptorPatch(_global) {
   } else {
     // Safari, Android browsers (Jelly Bean)
     patchViaCapturingAllTheEvents();
-
-    // BEGIN IQFY Patch - do not patch XMLHttpRequest when running tests
-    if (!window.testsAreRunning) {
-        patchClass('XMLHttpRequest');
-    }
-    // END IQFY Patch
-
+    patchClass('XMLHttpRequest');
     if (supportsWebSocket) {
       webSocketPatch.apply(_global);
     }
@@ -54,7 +48,7 @@ export function propertyDescriptorPatch(_global) {
 }
 
 function canPatchViaPropertyDescriptor() {
-  if ((isBrowser || isMix) && !Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'onclick') &&
+  if (isBrowser && !Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'onclick') &&
       typeof Element !== 'undefined') {
     // WebKit https://bugs.webkit.org/show_bug.cgi?id=134364
     // IDL interface attributes are not configurable

@@ -23,8 +23,8 @@ function getStacktraceWithUncaughtError(): Error {
 function getStacktraceWithCaughtError(): Error {
   try {
     throw getStacktraceWithUncaughtError();
-  } catch (error) {
-    return error;
+  } catch (e) {
+    return e;
   }
 }
 
@@ -107,7 +107,7 @@ Zone['longStackTraceZoneSpec'] = <ZoneSpec>{
           Object.defineProperty(error, 'stack', descriptor);
           stackSetSucceeded = true;
         }
-      } catch (err) {
+      } catch (e) {
       }
       const longStack: string = stackSetSucceeded ?
           null :
@@ -115,13 +115,13 @@ Zone['longStackTraceZoneSpec'] = <ZoneSpec>{
       if (!stackSetSucceeded) {
         try {
           stackSetSucceeded = error.stack = longStack;
-        } catch (err) {
+        } catch (e) {
         }
       }
       if (!stackSetSucceeded) {
         try {
           stackSetSucceeded = (error as any).longStack = longStack;
-        } catch (err) {
+        } catch (e) {
         }
       }
     }

@@ -1,67 +1,71 @@
 {
-  "_args": [
-    [
-      {
-        "raw": "zone.js@^0.7.4",
-        "scope": null,
-        "escapedName": "zone.js",
-        "name": "zone.js",
-        "rawSpec": "^0.7.4",
-        "spec": ">=0.7.4 <0.8.0",
-        "type": "range"
-      },
-      "/home/jean/sites/iqualify-platform/src"
-    ]
+  "name": "zone.js",
+  "version": "0.8.20",
+  "description": "Zones for JavaScript",
+  "main": "dist/zone-node.js",
+  "browser": "dist/zone.js",
+  "unpkg": "dist/zone.js",
+  "typings": "dist/zone.js.d.ts",
+  "files": [
+    "lib",
+    "dist"
   ],
-  "_from": "zone.js@>=0.7.4 <0.8.0",
-  "_id": "zone.js@0.7.6",
-  "_inCache": true,
-  "_location": "/zone.js",
-  "_nodeVersion": "6.9.2",
-  "_npmOperationalInternal": {
-    "host": "packages-18-east.internal.npmjs.com",
-    "tmp": "tmp/zone.js-0.7.6.tgz_1484693559144_0.4166297174524516"
+  "directories": {
+    "lib": "lib",
+    "test": "test"
   },
-  "_npmUser": {
-    "name": "angularcore",
-    "email": "angular-core+npm@google.com"
+  "scripts": {
+    "changelog": "gulp changelog",
+    "ci": "npm run lint && npm run format && npm run promisetest && npm run test:single && npm run test-node",
+    "closure:test": "scripts/closure/closure_compiler.sh",
+    "format": "gulp format:enforce",
+    "karma-jasmine": "karma start karma-build-jasmine.conf.js",
+    "karma-jasmine:phantomjs": "karma start karma-build-jasmine-phantomjs.conf.js --single-run",
+    "karma-jasmine:single": "karma start karma-build-jasmine.conf.js --single-run",
+    "karma-jasmine:autoclose": "npm run karma-jasmine:single && npm run ws-client",
+    "karma-jasmine-phantomjs:autoclose": "npm run karma-jasmine:phantomjs && npm run ws-client",
+    "lint": "gulp lint",
+    "prepublish": "tsc && gulp build",
+    "promisetest": "gulp promisetest",
+    "webdriver-start": "webdriver-manager update && webdriver-manager start",
+    "webdriver-http": "node simple-server.js",
+    "webdriver-test": "node test/webdriver/test.js",
+    "webdriver-sauce-test": "node test/webdriver/test.sauce.js",
+    "ws-client": "node ./test/ws-client.js",
+    "ws-server": "node ./test/ws-server.js",
+    "tsc": "tsc -p .",
+    "tsc:w": "tsc -w -p .",
+    "tslint": "tslint -c tslint.json 'lib/**/*.ts'",
+    "test": "npm run tsc && concurrently \"npm run tsc:w\" \"npm run ws-server\" \"npm run karma-jasmine\"",
+    "test:phantomjs": "npm run tsc && concurrently \"npm run tsc:w\" \"npm run ws-server\" \"npm run karma-jasmine:phantomjs\"",
+    "test:phantomjs-single": "npm run tsc && concurrently \"npm run ws-server\" \"npm run karma-jasmine-phantomjs:autoclose\"",
+    "test:single": "npm run tsc && concurrently \"npm run ws-server\" \"npm run karma-jasmine:autoclose\"",
+    "test-dist": "concurrently \"npm run tsc:w\" \"npm run ws-server\" \"karma start karma-dist-jasmine.conf.js\"",
+    "test-node": "gulp test/node",
+    "test-mocha": "npm run tsc && concurrently \"npm run tsc:w\" \"npm run ws-server\" \"karma start karma-build-mocha.conf.js\"",
+    "serve": "python -m SimpleHTTPServer 8000"
   },
-  "_npmVersion": "3.10.9",
-  "_phantomChildren": {},
-  "_requested": {
-    "raw": "zone.js@^0.7.4",
-    "scope": null,
-    "escapedName": "zone.js",
-    "name": "zone.js",
-    "rawSpec": "^0.7.4",
-    "spec": ">=0.7.4 <0.8.0",
-    "type": "range"
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/angular/zone.js.git"
   },
-  "_requiredBy": [
-    "/"
-  ],
-  "_resolved": "https://registry.npmjs.org/zone.js/-/zone.js-0.7.6.tgz",
-  "_shasum": "fbbc39d3e0261d0986f1ba06306eb3aeb0d22009",
-  "_shrinkwrap": null,
-  "_spec": "zone.js@^0.7.4",
-  "_where": "/home/jean/sites/iqualify-platform/src",
   "author": {
     "name": "Brian Ford"
   },
-  "browser": "dist/zone.js",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/angular/zone.js/issues"
   },
   "dependencies": {},
-  "description": "Zones for JavaScript",
   "devDependencies": {
-    "@types/jasmine": "^2.2.33",
+    "@types/jasmine": "2.2.33",
     "@types/node": "^6.0.38",
     "@types/systemjs": "^0.19.30",
-    "clang-format": "^1.0.46",
+    "clang-format": "1.0.46",
     "concurrently": "^2.2.0",
     "conventional-changelog": "^1.1.0",
     "es6-promise": "^3.0.2",
+    "google-closure-compiler": "^20170409.0.0",
     "gulp": "^3.8.11",
     "gulp-clang-format": "^1.0.23",
     "gulp-conventional-changelog": "^1.1.0",
@@ -78,37 +82,46 @@
     "karma-firefox-launcher": "^0.1.4",
     "karma-jasmine": "^0.3.6",
     "karma-mocha": "^1.2.0",
+    "karma-phantomjs-launcher": "^1.0.4",
     "karma-safari-launcher": "^0.1.1",
     "karma-sauce-launcher": "^0.2.10",
     "karma-sourcemap-loader": "^0.3.6",
     "mocha": "^3.1.2",
     "nodejs-websocket": "^1.2.0",
+    "phantomjs": "^2.1.7",
+    "promises-aplus-tests": "^2.1.2",
     "pump": "^1.0.1",
+    "rxjs": "^5.5.3",
+    "selenium-webdriver": "^3.4.0",
     "systemjs": "^0.19.37",
     "ts-loader": "^0.6.0",
     "tslint": "^4.1.1",
     "tslint-eslint-rules": "^3.1.0",
-    "typescript": "^2.0.2",
+    "typescript": "2.5.2",
     "vrsource-tslint-rules": "^4.0.0",
+    "webdriver-manager": "^12.0.6",
+    "webdriverio": "^4.8.0",
     "whatwg-fetch": "^2.0.1"
   },
-  "directories": {
-    "lib": "lib",
-    "test": "test"
+  "gitHead": "fd91152e615e3e8fbe69102f370fd32df8e3e174",
+  "homepage": "https://github.com/angular/zone.js#readme",
+  "_id": "zone.js@0.8.20",
+  "_npmVersion": "5.5.1",
+  "_nodeVersion": "6.9.2",
+  "_npmUser": {
+    "name": "angular",
+    "email": "angular-core+npm@google.com"
   },
   "dist": {
-    "shasum": "fbbc39d3e0261d0986f1ba06306eb3aeb0d22009",
-    "tarball": "https://registry.npmjs.org/zone.js/-/zone.js-0.7.6.tgz"
+    "integrity": "sha512-FXlA37ErSXCMy5RNBcGFgCI/Zivqzr0D19GuvDxhcYIJc7xkFp6c29DKyODJu0Zo+EMyur/WPPgcBh1EHjB9jA==",
+    "shasum": "a218c48db09464b19ff6fc8f0d4bb5b1046e185d",
+    "tarball": "https://registry.npmjs.org/zone.js/-/zone.js-0.8.20.tgz"
   },
-  "files": [
-    "lib",
-    "dist"
-  ],
-  "gitHead": "787b63605affa5d1b2960c9ce6ddbb96824fd3c0",
-  "homepage": "https://github.com/angular/zone.js#readme",
-  "license": "MIT",
-  "main": "dist/zone-node.js",
   "maintainers": [
+    {
+      "name": "angular",
+      "email": "angular-core+npm@google.com"
+    },
     {
       "name": "angularcore",
       "email": "angular-core+npm@google.com"
@@ -118,33 +131,11 @@
       "email": "briantford@gmail.com"
     }
   ],
-  "name": "zone.js",
-  "optionalDependencies": {},
-  "readme": "ERROR: No README data found!",
-  "repository": {
-    "type": "git",
-    "url": "git://github.com/angular/zone.js.git"
+  "_npmOperationalInternal": {
+    "host": "s3://npm-registry-packages",
+    "tmp": "tmp/zone.js-0.8.20.tgz_1515623526940_0.36898547667078674"
   },
-  "scripts": {
-    "changelog": "gulp changelog",
-    "ci": "npm run lint && npm run format && npm run test:single && npm run test-node",
-    "format": "gulp format:enforce",
-    "karma-jasmine": "karma start karma-build-jasmine.conf.js",
-    "karma-jasmine:autoclose": "npm run karma-jasmine:single && npm run ws-client",
-    "karma-jasmine:single": "karma start karma-build-jasmine.conf.js --single-run",
-    "lint": "gulp lint",
-    "prepublish": "tsc && gulp build",
-    "serve": "python -m SimpleHTTPServer 8000",
-    "test": "npm run tsc && concurrently \"npm run tsc:w\" \"npm run ws-server\" \"npm run karma-jasmine\"",
-    "test-dist": "concurrently \"npm run tsc:w\" \"npm run ws-server\" \"karma start karma-dist-jasmine.conf.js\"",
-    "test-mocha": "npm run tsc && concurrently \"npm run tsc:w\" \"npm run ws-server\" \"karma start karma-build-mocha.conf.js\"",
-    "test-node": "gulp test/node",
-    "test:single": "npm run tsc && concurrently \"npm run ws-server\" \"npm run karma-jasmine:autoclose\"",
-    "tsc": "tsc",
-    "tsc:w": "tsc -w",
-    "ws-client": "node ./test/ws-client.js",
-    "ws-server": "node ./test/ws-server.js"
-  },
-  "typings": "dist/zone.js.d.ts",
-  "version": "0.7.6"
+  "_shasum": "a218c48db09464b19ff6fc8f0d4bb5b1046e185d",
+  "_resolved": "https://registry.npmjs.org/zone.js/-/zone.js-0.8.20.tgz",
+  "_from": "zone.js@0.8.20"
 }

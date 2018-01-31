@@ -6,9 +6,9 @@
 * found in the LICENSE file at https://angular.io/license
 */
 (function (global, factory) {
-    typeof exports === 'object' && typeof module !== 'undefined' ? factory() :
-    typeof define === 'function' && define.amd ? define(factory) :
-    (factory());
+	typeof exports === 'object' && typeof module !== 'undefined' ? factory() :
+	typeof define === 'function' && define.amd ? define(factory) :
+	(factory());
 }(this, (function () { 'use strict';
 
 /**
@@ -28,13 +28,23 @@
             // Current simulated time in millis.
             this._currentTime = 0;
         }
-        Scheduler.prototype.scheduleFunction = function (cb, delay, args, id) {
+        Scheduler.prototype.scheduleFunction = function (cb, delay, args, isPeriodic, isRequestAnimationFrame, id) {
             if (args === void 0) { args = []; }
+            if (isPeriodic === void 0) { isPeriodic = false; }
+            if (isRequestAnimationFrame === void 0) { isRequestAnimationFrame = false; }
             if (id === void 0) { id = -1; }
             var currentId = id < 0 ? this.nextId++ : id;
             var endTime = this._currentTime + delay;
             // Insert so that scheduler queue remains sorted by end time.
-            var newEntry = { endTime: endTime, id: currentId, func: cb, args: args, delay: delay };
+            var newEntry = {
+                endTime: endTime,
+                id: currentId,
+                func: cb,
+                args: args,
+                delay: delay,
+                isPeriodic: isPeriodic,
+                isRequestAnimationFrame: isRequestAnimationFrame
+            };
             var i = 0;
             for (; i < this._schedulerQueue.length; i++) {
                 var currentEntry = this._schedulerQueue[i];
@@ -53,9 +63,14 @@
                 }
             }
         };
-        Scheduler.prototype.tick = function (millis) {
+        Scheduler.prototype.tick = function (millis, doTick) {
             if (millis === void 0) { millis = 0; }
             var finalTime = this._currentTime + millis;
+            var lastCurrentTime = 0;
+            if (this._schedulerQueue.length === 0 && doTick) {
+                doTick(millis);
+                return;
+            }
             while (this._schedulerQueue.length > 0) {
                 var current = this._schedulerQueue[0];
                 if (finalTime < current.endTime) {
@@ -65,7 +80,11 @@
                 else {
                     // Time to run scheduled function. Remove it from the head of queue.
                     var current_1 = this._schedulerQueue.shift();
+                    lastCurrentTime = this._currentTime;
                     this._currentTime = current_1.endTime;
+                    if (doTick) {
+                        doTick(this._currentTime - lastCurrentTime);
+                    }
                     var retval = current_1.func.apply(global, current_1.args);
                     if (!retval) {
                         // Uncaught exception in the current scheduled function. Stop processing the queue.
@@ -75,18 +94,78 @@
             }
             this._currentTime = finalTime;
         };
+        Scheduler.prototype.flush = function (limit, flushPeriodic, doTick) {
+            if (limit === void 0) { limit = 20; }
+            if (flushPeriodic === void 0) { flushPeriodic = false; }
+            if (flushPeriodic) {
+                return this.flushPeriodic(doTick);
+            }
+            else {
+                return this.flushNonPeriodic(limit, doTick);
+            }
+        };
+        Scheduler.prototype.flushPeriodic = function (doTick) {
+            if (this._schedulerQueue.length === 0) {
+                return 0;
+            }
+            // Find the last task currently queued in the scheduler queue and tick
+            // till that time.
+            var startTime = this._currentTime;
+            var lastTask = this._schedulerQueue[this._schedulerQueue.length - 1];
+            this.tick(lastTask.endTime - startTime, doTick);
+            return this._currentTime - startTime;
+        };
+        Scheduler.prototype.flushNonPeriodic = function (limit, doTick) {
+            var startTime = this._currentTime;
+            var lastCurrentTime = 0;
+            var count = 0;
+            while (this._schedulerQueue.length > 0) {
+                count++;
+                if (count > limit) {
+                    throw new Error('flush failed after reaching the limit of ' + limit +
+                        ' tasks. Does your code use a polling timeout?');
+                }
+                // flush only non-periodic timers.
+                // If the only remaining tasks are periodic(or requestAnimationFrame), finish flushing.
+                if (this._schedulerQueue.filter(function (task) { return !task.isPeriodic && !task.isRequestAnimationFrame; })
+                    .length === 0) {
+                    break;
+                }
+                var current = this._schedulerQueue.shift();
+                lastCurrentTime = this._currentTime;
+                this._currentTime = current.endTime;
+                if (doTick) {
+                    // Update any secondary schedulers like Jasmine mock Date.
+                    doTick(this._currentTime - lastCurrentTime);
+                }
+                var retval = current.func.apply(global, current.args);
+                if (!retval) {
+                    // Uncaught exception in the current scheduled function. Stop processing the queue.
+                    break;
+                }
+            }
+            return this._currentTime - startTime;
+        };
         return Scheduler;
     }());
     var FakeAsyncTestZoneSpec = (function () {
-        function FakeAsyncTestZoneSpec(namePrefix) {
+        function FakeAsyncTestZoneSpec(namePrefix, trackPendingRequestAnimationFrame, macroTaskOptions) {
+            if (trackPendingRequestAnimationFrame === void 0) { trackPendingRequestAnimationFrame = false; }
+            this.trackPendingRequestAnimationFrame = trackPendingRequestAnimationFrame;
+            this.macroTaskOptions = macroTaskOptions;
             this._scheduler = new Scheduler();
             this._microtasks = [];
             this._lastError = null;
-            this._uncaughtPromiseErrors = Promise[Zone['__symbol__']('uncaughtPromiseErrors')];
+            this._uncaughtPromiseErrors = Promise[Zone.__symbol__('uncaughtPromiseErrors')];
             this.pendingPeriodicTimers = [];
             this.pendingTimers = [];
             this.properties = { 'FakeAsyncTestZoneSpec': this };
             this.name = 'fakeAsyncTestZone for ' + namePrefix;
+            // in case user can't access the construction of FakeAsyncTestSpec
+            // user can also define macroTaskOptions by define a global variable.
+            if (!this.macroTaskOptions) {
+                this.macroTaskOptions = global[Zone.__symbol__('FakeAsyncTestMacroTask')];
+            }
         }
         FakeAsyncTestZoneSpec.assertInZone = function () {
             if (Zone.current.get('FakeAsyncTestZoneSpec') == null) {
@@ -134,7 +213,7 @@
             return function () {
                 // Requeue the timer callback if it's not been canceled.
                 if (_this.pendingPeriodicTimers.indexOf(id) !== -1) {
-                    _this._scheduler.scheduleFunction(fn, interval, args, id);
+                    _this._scheduler.scheduleFunction(fn, interval, args, true, false, id);
                 }
             };
         };
@@ -144,12 +223,15 @@
                 FakeAsyncTestZoneSpec._removeTimer(_this.pendingPeriodicTimers, id);
             };
         };
-        FakeAsyncTestZoneSpec.prototype._setTimeout = function (fn, delay, args) {
+        FakeAsyncTestZoneSpec.prototype._setTimeout = function (fn, delay, args, isTimer) {
+            if (isTimer === void 0) { isTimer = true; }
             var removeTimerFn = this._dequeueTimer(this._scheduler.nextId);
             // Queue the callback and dequeue the timer on success and error.
             var cb = this._fnAndFlush(fn, { onSuccess: removeTimerFn, onError: removeTimerFn });
-            var id = this._scheduler.scheduleFunction(cb, delay, args);
-            this.pendingTimers.push(id);
+            var id = this._scheduler.scheduleFunction(cb, delay, args, false, !isTimer);
+            if (isTimer) {
+                this.pendingTimers.push(id);
+            }
             return id;
         };
         FakeAsyncTestZoneSpec.prototype._clearTimeout = function (id) {
@@ -167,7 +249,7 @@
             // Use the callback created above to requeue on success.
             completers.onSuccess = this._requeuePeriodicTimer(cb, interval, args, id);
             // Queue the callback and dequeue the periodic timer only on error.
-            this._scheduler.scheduleFunction(cb, interval, args);
+            this._scheduler.scheduleFunction(cb, interval, args, true);
             this.pendingPeriodicTimers.push(id);
             return id;
         };
@@ -181,11 +263,11 @@
             this._lastError = null;
             throw error;
         };
-        FakeAsyncTestZoneSpec.prototype.tick = function (millis) {
+        FakeAsyncTestZoneSpec.prototype.tick = function (millis, doTick) {
             if (millis === void 0) { millis = 0; }
             FakeAsyncTestZoneSpec.assertInZone();
             this.flushMicrotasks();
-            this._scheduler.tick(millis);
+            this._scheduler.tick(millis, doTick);
             if (this._lastError !== null) {
                 this._resetLastErrorAndThrow();
             }
@@ -201,14 +283,38 @@
             };
             while (this._microtasks.length > 0) {
                 var microtask = this._microtasks.shift();
-                microtask();
+                microtask.func.apply(microtask.target, microtask.args);
             }
             flushErrors();
+        };
+        FakeAsyncTestZoneSpec.prototype.flush = function (limit, flushPeriodic, doTick) {
+            FakeAsyncTestZoneSpec.assertInZone();
+            this.flushMicrotasks();
+            var elapsed = this._scheduler.flush(limit, flushPeriodic, doTick);
+            if (this._lastError !== null) {
+                this._resetLastErrorAndThrow();
+            }
+            return elapsed;
         };
         FakeAsyncTestZoneSpec.prototype.onScheduleTask = function (delegate, current, target, task) {
             switch (task.type) {
                 case 'microTask':
-                    this._microtasks.push(task.invoke);
+                    var args = task.data && task.data.args;
+                    // should pass additional arguments to callback if have any
+                    // currently we know process.nextTick will have such additional
+                    // arguments
+                    var additionalArgs = void 0;
+                    if (args) {
+                        var callbackIndex = task.data.cbIdx;
+                        if (typeof args.length === 'number' && args.length > callbackIndex + 1) {
+                            additionalArgs = Array.prototype.slice.call(args, callbackIndex + 1);
+                        }
+                    }
+                    this._microtasks.push({
+                        func: task.invoke,
+                        args: additionalArgs,
+                        target: task.data && task.data.target
+                    });
                     break;
                 case 'macroTask':
                     switch (task.source) {
@@ -221,9 +327,35 @@
                                 this._setInterval(task.invoke, task.data['delay'], task.data['args']);
                             break;
                         case 'XMLHttpRequest.send':
-                            throw new Error('Cannot make XHRs from within a fake async test.');
+                            throw new Error('Cannot make XHRs from within a fake async test. Request URL: ' +
+                                task.data['url']);
+                        case 'requestAnimationFrame':
+                        case 'webkitRequestAnimationFrame':
+                        case 'mozRequestAnimationFrame':
+                            // Simulate a requestAnimationFrame by using a setTimeout with 16 ms.
+                            // (60 frames per second)
+                            task.data['handleId'] = this._setTimeout(task.invoke, 16, task.data['args'], this.trackPendingRequestAnimationFrame);
+                            break;
                         default:
-                            task = delegate.scheduleTask(target, task);
+                            // user can define which macroTask they want to support by passing
+                            // macroTaskOptions
+                            var macroTaskOption = this.findMacroTaskOption(task);
+                            if (macroTaskOption) {
+                                var args_1 = task.data && task.data['args'];
+                                var delay = args_1 && args_1.length > 1 ? args_1[1] : 0;
+                                var callbackArgs = macroTaskOption.callbackArgs ? macroTaskOption.callbackArgs : args_1;
+                                if (!!macroTaskOption.isPeriodic) {
+                                    // periodic macroTask, use setInterval to simulate
+                                    task.data['handleId'] = this._setInterval(task.invoke, delay, callbackArgs);
+                                    task.data.isPeriodic = true;
+                                }
+                                else {
+                                    // not periodic, use setTimeout to simulate
+                                    task.data['handleId'] = this._setTimeout(task.invoke, delay, callbackArgs);
+                                }
+                                break;
+                            }
+                            throw new Error('Unknown macroTask scheduled in fake async test: ' + task.source);
                     }
                     break;
                 case 'eventTask':
@@ -235,12 +367,35 @@
         FakeAsyncTestZoneSpec.prototype.onCancelTask = function (delegate, current, target, task) {
             switch (task.source) {
                 case 'setTimeout':
+                case 'requestAnimationFrame':
+                case 'webkitRequestAnimationFrame':
+                case 'mozRequestAnimationFrame':
                     return this._clearTimeout(task.data['handleId']);
                 case 'setInterval':
                     return this._clearInterval(task.data['handleId']);
                 default:
+                    // user can define which macroTask they want to support by passing
+                    // macroTaskOptions
+                    var macroTaskOption = this.findMacroTaskOption(task);
+                    if (macroTaskOption) {
+                        var handleId = task.data['handleId'];
+                        return macroTaskOption.isPeriodic ? this._clearInterval(handleId) :
+                            this._clearTimeout(handleId);
+                    }
                     return delegate.cancelTask(target, task);
             }
+        };
+        FakeAsyncTestZoneSpec.prototype.findMacroTaskOption = function (task) {
+            if (!this.macroTaskOptions) {
+                return null;
+            }
+            for (var i = 0; i < this.macroTaskOptions.length; i++) {
+                var macroTaskOption = this.macroTaskOptions[i];
+                if (macroTaskOption.source === task.source) {
+                    return macroTaskOption;
+                }
+            }
+            return null;
         };
         FakeAsyncTestZoneSpec.prototype.onHandleError = function (parentZoneDelegate, currentZone, targetZone, error) {
             this._lastError = error;

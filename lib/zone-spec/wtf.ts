@@ -5,15 +5,17 @@
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
+/**
+ * @fileoverview
+ * @suppress {missingRequire}
+ */
 
-(function(global) {
+(function(global: any) {
   interface Wtf {
     trace: WtfTrace;
   }
   interface WtfScope {}
-  ;
   interface WtfRange {}
-  ;
   interface WtfTrace {
     events: WtfEvents;
     leaveScope(scope: WtfScope, returnValue?: any): void;
@@ -120,12 +122,12 @@
       const retValue = parentZoneDelegate.cancelTask(targetZone, task);
       instance(zonePathName(targetZone), shallowObj(task.data, 2));
       return retValue;
-    };
+    }
   }
 
-  function shallowObj(obj: any, depth: number): any {
+  function shallowObj(obj: {[k: string]: any}, depth: number): any {
     if (!depth) return null;
-    const out = {};
+    const out: {[k: string]: any} = {};
     for (const key in obj) {
       if (obj.hasOwnProperty(key)) {
         let value = obj[key];
@@ -154,5 +156,5 @@
     return name;
   }
 
-  Zone['wtfZoneSpec'] = !wtfEnabled ? null : new WtfZoneSpec();
+  (Zone as any)['wtfZoneSpec'] = !wtfEnabled ? null : new WtfZoneSpec();
 })(typeof window === 'object' && window || typeof self === 'object' && self || global);

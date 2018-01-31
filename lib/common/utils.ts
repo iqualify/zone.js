@@ -8,13 +8,15 @@
 /**
  * Suppress closure compiler errors about unknown 'Zone' variable
  * @fileoverview
- * @suppress {undefinedVars}
+ * @suppress {undefinedVars,globalThis}
  */
 
 // Hack since TypeScript isn't compiling this for a worker.
-declare const WorkerGlobalScope;
+declare const WorkerGlobalScope: any;
+
 export const zoneSymbol: (name: string) => string = (n) => `__zone_symbol__${n}`;
-const _global = typeof window === 'object' && window || typeof self === 'object' && self || global;
+const _global: any =
+    typeof window === 'object' && window || typeof self === 'object' && self || global;
 
 export function bindArguments(args: any[], source: string): any[] {
   for (let i = args.length - 1; i >= 0; i--) {
@@ -25,7 +27,7 @@ export function bindArguments(args: any[], source: string): any[] {
   return args;
 }
 
-export function patchPrototype(prototype, fnNames) {
+export function patchPrototype(prototype: any, fnNames: string[]) {
   const source = prototype.constructor['name'];
   for (let i = 0; i < fnNames.length; i++) {
     const name = fnNames[i];
@@ -48,10 +50,14 @@ export const isNode: boolean =
      {}.toString.call(process) === '[object process]');
 
 export const isBrowser: boolean =
-    !isNode && !isWebWorker && !!(typeof window !== 'undefined' && window['HTMLElement']);
+    !isNode && !isWebWorker && !!(typeof window !== 'undefined' && (window as any)['HTMLElement']);
 
+// we are in electron of nw, so we are both browser and nodejs
+export const isMix: boolean = typeof process !== 'undefined' &&
+    {}.toString.call(process) === '[object process]' && !isWebWorker &&
+    !!(typeof window !== 'undefined' && (window as any)['HTMLElement']);
 
-export function patchProperty(obj, prop) {
+export function patchProperty(obj: any, prop: string) {
   const desc = Object.getOwnPropertyDescriptor(obj, prop) || {enumerable: true, configurable: true};
 
   const originalDesc = Object.getOwnPropertyDescriptor(obj, 'original' + prop);
@@ -70,7 +76,7 @@ export function patchProperty(obj, prop) {
 
   // substr(2) cuz 'onclick' -> 'click', etc
   const eventName = prop.substr(2);
-  const _prop = '_' + prop;
+  const _prop = zoneSymbol('_' + prop);
 
   desc.set = function(fn) {
     if (this[_prop]) {
@@ -78,7 +84,7 @@ export function patchProperty(obj, prop) {
     }
 
     if (typeof fn === 'function') {
-      const wrapFn = function(event) {
+      const wrapFn = function(event: Event) {
         let result;
         result = fn.apply(this, arguments);
 
@@ -277,7 +283,7 @@ export function makeZoneAwareAddListener(
       // accessing the handler object here will cause an exception to be thrown which
       // will fail tests prematurely.
       validZoneHandler = data.handler && data.handler.toString() === '[object FunctionWrapper]';
-    } catch (e) {
+    } catch (error) {
       // Returning nothing here is fine, because objects in a cross-site context are unusable
       return;
     }
@@ -361,8 +367,8 @@ export function makeZoneAwareListeners(fnName: string) {
       return [];
     }
     return target[EVENT_TASKS]
-        .filter(task => task.data.eventName === eventName)
-        .map(task => task.data.handler);
+        .filter((task: Task) => (task.data as any)['eventName'] === eventName)
+        .map((task: Task) => (task.data as any)['handler']);
   };
 }
 
@@ -389,7 +395,7 @@ export function patchEventTargetMethods(
 const originalInstanceKey = zoneSymbol('originalInstance');
 
 // wrap some native API on `window`
-export function patchClass(className) {
+export function patchClass(className: string) {
   const OriginalClass = _global[className];
   if (!OriginalClass) return;
 
@@ -454,7 +460,7 @@ export function patchClass(className) {
 export function createNamedFn(name: string, delegate: (self: any, args: any[]) => any): Function {
   try {
     return (Function('f', `return function ${name}(){return f(this, arguments)}`))(delegate);
-  } catch (e) {
+  } catch (error) {
     // if we fail, we must be CSP, just return delegate.
     return function() {
       return delegate(this, <any>arguments);
@@ -490,10 +496,10 @@ export interface MacroTaskMeta extends TaskData {
   args: any[];
 }
 
-// TODO: support cancel task later if necessary
+// TODO: @JiaLiPassion, support cancel task later if necessary
 export function patchMacroTask(
     obj: any, funcName: string, metaCreator: (self: any, args: any[]) => MacroTaskMeta) {
-  let setNative = null;
+  let setNative: Function = null;
 
   function scheduleTask(task: Task) {
     const data = <MacroTaskMeta>task.data;
@@ -516,3 +522,55 @@ export function patchMacroTask(
     }
   });
 }
+
+export interface MicroTaskMeta extends TaskData {
+  name: string;
+  target: any;
+  callbackIndex: number;
+  args: any[];
+}
+
+export function patchMicroTask(
+    obj: any, funcName: string, metaCreator: (self: any, args: any[]) => MicroTaskMeta) {
+  let setNative: Function = null;
+
+  function scheduleTask(task: Task) {
+    const data = <MacroTaskMeta>task.data;
+    data.args[data.callbackIndex] = function() {
+      task.invoke.apply(this, arguments);
+    };
+    setNative.apply(data.target, data.args);
+    return task;
+  }
+
+  setNative = patchMethod(obj, funcName, (delegate: Function) => function(self: any, args: any[]) {
+    const meta = metaCreator(self, args);
+    if (meta.callbackIndex >= 0 && typeof args[meta.callbackIndex] === 'function') {
+      const task =
+          Zone.current.scheduleMicroTask(meta.name, args[meta.callbackIndex], meta, scheduleTask);
+      return task;
+    } else {
+      // cause an error by calling it directly.
+      return delegate.apply(self, args);
+    }
+  });
+}
+
+export function findEventTask(target: any, evtName: string): Task[] {
+  const eventTasks: Task[] = target[zoneSymbol('eventTasks')];
+  const result: Task[] = [];
+  if (eventTasks) {
+    for (let i = 0; i < eventTasks.length; i++) {
+      const eventTask = eventTasks[i];
+      const data = eventTask.data;
+      const eventName = data && (<any>data).eventName;
+      if (eventName === evtName) {
+        result.push(eventTask);
+      }
+    }
+  }
+  return result;
+}
+
+(Zone as any)[zoneSymbol('patchEventTargetMethods')] = patchEventTargetMethods;
+(Zone as any)[zoneSymbol('patchOnProperties')] = patchOnProperties;

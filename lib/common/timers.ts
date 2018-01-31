@@ -14,8 +14,8 @@ interface TimerOptions extends TaskData {
 }
 
 export function patchTimer(window: any, setName: string, cancelName: string, nameSuffix: string) {
-  let setNative = null;
-  let clearNative = null;
+  let setNative: Function = null;
+  let clearNative: Function = null;
   setName += nameSuffix;
   cancelName += nameSuffix;
 
@@ -23,10 +23,14 @@ export function patchTimer(window: any, setName: string, cancelName: string, nam
 
   function scheduleTask(task: Task) {
     const data = <TimerOptions>task.data;
-    data.args[0] = function() {
-      task.invoke.apply(this, arguments);
-      delete tasksByHandleId[data.handleId];
+    function timer() {
+      try {
+        task.invoke.apply(this, arguments);
+      } finally {
+        delete tasksByHandleId[data.handleId];
+      }
     };
+    data.args[0] = timer;
     data.handleId = setNative.apply(window, data.args);
     tasksByHandleId[data.handleId] = task;
     return task;
@@ -52,8 +56,11 @@ export function patchTimer(window: any, setName: string, cancelName: string, nam
             return task;
           }
           // Node.js must additionally support the ref and unref functions.
-          const handle = (<TimerOptions>task.data).handleId;
-          if ((<any>handle).ref && (<any>handle).unref) {
+          const handle: any = (<TimerOptions>task.data).handleId;
+          // check whether handle is null, because some polyfill or browser
+          // may return undefined from setTimeout/setInterval/setImmediate/requestAnimationFrame
+          if (handle && handle.ref && handle.unref && typeof handle.ref === 'function' &&
+              typeof handle.unref === 'function') {
             (<any>task).ref = (<any>handle).ref.bind(handle);
             (<any>task).unref = (<any>handle).unref.bind(handle);
           }
@@ -68,7 +75,8 @@ export function patchTimer(window: any, setName: string, cancelName: string, nam
       patchMethod(window, cancelName, (delegate: Function) => function(self: any, args: any[]) {
         const task: Task = typeof args[0] === 'number' ? tasksByHandleId[args[0]] : args[0];
         if (task && typeof task.type === 'string') {
-          if (task.cancelFn && task.data.isPeriodic || task.runCount === 0) {
+          if (task.state !== 'notScheduled' &&
+              (task.cancelFn && task.data.isPeriodic || task.runCount === 0)) {
             // Do not cancel already canceled functions
             task.zone.cancelTask(task);
           }

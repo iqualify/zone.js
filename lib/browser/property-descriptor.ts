@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {isBrowser, isNode, patchClass, patchOnProperties, zoneSymbol} from '../common/utils';
+import {isBrowser, isMix, isNode, patchClass, patchOnProperties, zoneSymbol} from '../common/utils';
 
 import * as webSocketPatch from './websocket';
 
@@ -14,8 +14,8 @@ const eventNames =
     'copy cut paste abort blur focus canplay canplaythrough change click contextmenu dblclick drag dragend dragenter dragleave dragover dragstart drop durationchange emptied ended input invalid keydown keypress keyup load loadeddata loadedmetadata loadstart message mousedown mouseenter mouseleave mousemove mouseout mouseover mouseup pause play playing progress ratechange reset scroll seeked seeking select show stalled submit suspend timeupdate volumechange waiting mozfullscreenchange mozfullscreenerror mozpointerlockchange mozpointerlockerror error webglcontextrestored webglcontextlost webglcontextcreationerror'
         .split(' ');
 
-export function propertyDescriptorPatch(_global) {
-  if (isNode) {
+export function propertyDescriptorPatch(_global: any) {
+  if (isNode && !isMix) {
     return;
   }
 
@@ -48,7 +48,7 @@ export function propertyDescriptorPatch(_global) {
 }
 
 function canPatchViaPropertyDescriptor() {
-  if (isBrowser && !Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'onclick') &&
+  if ((isBrowser || isMix) && !Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'onclick') &&
       typeof Element !== 'undefined') {
     // WebKit https://bugs.webkit.org/show_bug.cgi?id=134364
     // IDL interface attributes are not configurable
@@ -86,7 +86,7 @@ function patchViaCapturingAllTheEvents() {
     const property = eventNames[i];
     const onproperty = 'on' + property;
     self.addEventListener(property, function(event) {
-      let elt = <Node>event.target, bound, source;
+      let elt: any = <Node>event.target, bound, source;
       if (elt) {
         source = elt.constructor['name'] + '.' + onproperty;
       } else {

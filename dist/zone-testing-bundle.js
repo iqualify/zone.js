@@ -527,9 +527,13 @@ var Zone$1 = (function (global) {
                 }
             }
             else {
+                // BEGIN IQFY PATCH - do not throw an error for Zombie.js
+                if (!window.testsAreRunning) {
                 throw new Error(this.type + " '" + this.source + "': can not transition to '" + toState + "', expecting state '" + fromState1 + "'" + (fromState2 ?
                     ' or \'' + fromState2 + '\'' :
                     '') + ", was '" + this._state + "'.");
+                }
+                // END IQFY PATCH
             }
         };
         ZoneTask.prototype.toString = function () {

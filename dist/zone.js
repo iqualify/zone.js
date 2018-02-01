@@ -527,9 +527,13 @@ var Zone$1 = (function (global) {
                 }
             }
             else {
+                // BEGIN IQFY PATCH - do not throw an error for Zombie.js
+                if (!window.testsAreRunning) {
                 throw new Error(this.type + " '" + this.source + "': can not transition to '" + toState + "', expecting state '" + fromState1 + "'" + (fromState2 ?
                     ' or \'' + fromState2 + '\'' :
                     '') + ", was '" + this._state + "'.");
+                }
+                // END IQFY PATCH
             }
         };
         ZoneTask.prototype.toString = function () {
@@ -2580,10 +2584,11 @@ function propertyDescriptorPatch(api, _global) {
     else {
         // Safari, Android browsers (Jelly Bean)
         patchViaCapturingAllTheEvents();
-        // BEGIN IQFY Patch - do not patch XMLHttpRequest when running tests
+        // BEGIN IQFY PATCH - do not patch XMLHttpRequest when running tests
         if (!window.testsAreRunning) {
             patchClass('XMLHttpRequest');
         }
+        // END IQFY PATCH
         if (supportsWebSocket) {
             apply(api, _global);
         }

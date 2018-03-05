@@ -1034,41 +1034,42 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             return resultPromise;
         };
     }
-		if (NativePromise) {
-		  patchThen(NativePromise);
-		  var fetch_1 = global['fetch'];
-			/** BEGIN IQFY fetch - if tests are running do not make fetch() zone-aware
-			 * without triggering extra requests or uncatchable errors
-			 * https://github.com/angular/zone.js/commit/6731ad0
-			 * CourseDiscussionRealtimeCommentsSpec.js will not work If we make
-			 * fetch() zone-aware without triggering extra requests or  uncatchable
-			 * errors
-			 **/
-			if (!window.testsAreRunning) {
-		    if (typeof fetch_1 == 'function') {
-		      global['fetch'] = zoneify(fetch_1);
-		    }
-			} else  {
-		    if (typeof global['fetch'] !== 'undefined') {
-		      var fetchPromise = void 0;
-		      try {
-		        // In MS Edge this throws
-		        fetchPromise = global['fetch']();
-		      }
-		      catch (e) {
-		        // In Chrome this throws instead.
-		        fetchPromise = global['fetch']('about:blank');
-		      }
-		      // ignore output to prevent error;
-		      fetchPromise.then(function () { return null; }, function () { return null; });
-		      if (fetchPromise.constructor != NativePromise &&
-		        fetchPromise.constructor != ZoneAwarePromise) {
-		        patchThen(fetchPromise.constructor);
-		      }
-		    }
-		}
-			// END IQFY PATCH
-		}
+    if (NativePromise) {
+        patchThen(NativePromise);
+        var fetch_1 = global['fetch'];
+        /**
+         * BEGIN IQFY PATCH - if tests are running do not make fetch() zone-aware
+         * without triggering extra requests or uncatchable errors
+         * https://github.com/angular/zone.js/commit/6731ad0
+         * CourseDiscussionRealtimeCommentsSpec.js will not work If we make
+         * fetch() zone-aware without triggering extra requests or uncatchable
+         * errors
+         **/
+        if (!window.testsAreRunning) {
+            if (typeof fetch_1 == 'function') {
+                global['fetch'] = zoneify(fetch_1);
+            }
+        } else {
+            if (typeof global['fetch'] !== 'undefined') {
+                var fetchPromise = void 0;
+                try {
+                    // In MS Edge this throws
+                    fetchPromise = global['fetch']();
+                }
+                catch (e) {
+                    // In Chrome this throws instead.
+                    fetchPromise = global['fetch']('about:blank');
+                }
+                // ignore output to prevent error;
+                fetchPromise.then(function () { return null; }, function () { return null; });
+                if (fetchPromise.constructor != NativePromise &&
+                    fetchPromise.constructor != ZoneAwarePromise) {
+                    patchThen(fetchPromise.constructor);
+                }
+            }
+        }
+        // END IQFY PATCH
+    }
     // This is not part of public API, but it is useful for tests, so we expose it.
     Promise[Zone.__symbol__('uncaughtPromiseErrors')] = _uncaughtPromiseErrors;
     return ZoneAwarePromise;

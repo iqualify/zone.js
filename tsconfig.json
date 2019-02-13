@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es5",
+    "noImplicitAny": true,
+    "noImplicitReturns": false,
+    "noImplicitThis": false,
+    "outDir": "build",
+    "inlineSourceMap": true,
+    "inlineSources": true,
+    "declaration": false,
+    "noEmitOnError": false,
+    "stripInternal": false,
+    "strict": true,
+    "lib": [
+      "es5",
+      "dom",
+      "es2015.promise"
+    ]
+  },
+  "exclude": [
+    "node_modules",
+    "build",
+    "build-esm",
+    "dist",
+    "lib/closure",
+    "lib/node/**",
+    "lib/mix/**",
+    "test/node/**",
+    "test/node_bluebird_entry_point.ts",
+    "test/node_entry_point.ts",
+    "test/node_error_entry_point.ts",
+    "test/node_tests.ts"
+  ]
+}

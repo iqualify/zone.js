@@ -10,7 +10,7 @@
  * @suppress {globalThis}
  */
 
-import {isBrowser, isMix, isNode, ObjectDefineProperty, ObjectGetOwnPropertyDescriptor, ObjectGetPrototypeOf, patchClass, patchOnProperties, wrapWithCurrentZone, zoneSymbol} from '../common/utils';
+import {isBrowser, isIE, isMix, isNode, ObjectDefineProperty, ObjectGetOwnPropertyDescriptor, ObjectGetPrototypeOf, patchClass, patchOnProperties, wrapWithCurrentZone, zoneSymbol} from '../common/utils';
 
 import * as webSocketPatch from './websocket';
 
@@ -113,10 +113,10 @@ const globalEventHandlersEventNames = [
   'wheel'
 ];
 const documentEventNames = [
-  'afterscriptexecute', 'beforescriptexecute', 'DOMContentLoaded', 'fullscreenchange',
+  'afterscriptexecute', 'beforescriptexecute', 'DOMContentLoaded', 'freeze', 'fullscreenchange',
   'mozfullscreenchange', 'webkitfullscreenchange', 'msfullscreenchange', 'fullscreenerror',
   'mozfullscreenerror', 'webkitfullscreenerror', 'msfullscreenerror', 'readystatechange',
-  'visibilitychange'
+  'visibilitychange', 'resume'
 ];
 const windowEventNames = [
   'absolutedeviceorientation',
@@ -241,7 +241,7 @@ export interface IgnoreProperty {
 
 function filterProperties(
     target: any, onProperties: string[], ignoreProperties: IgnoreProperty[]): string[] {
-  if (!ignoreProperties) {
+  if (!ignoreProperties || ignoreProperties.length === 0) {
     return onProperties;
   }
 
@@ -256,6 +256,11 @@ function filterProperties(
 
 export function patchFilteredProperties(
     target: any, onProperties: string[], ignoreProperties: IgnoreProperty[], prototype?: any) {
+  // check whether target is available, sometimes target will be undefined
+  // because different browser or some 3rd party plugin.
+  if (!target) {
+    return;
+  }
   const filteredProperties: string[] = filterProperties(target, onProperties, ignoreProperties);
   patchOnProperties(target, filteredProperties, prototype);
 }
@@ -267,14 +272,17 @@ export function propertyDescriptorPatch(api: _ZonePrivate, _global: any) {
 
   const supportsWebSocket = typeof WebSocket !== 'undefined';
   if (canPatchViaPropertyDescriptor()) {
-    const ignoreProperties: IgnoreProperty[] = _global.__Zone_ignore_on_properties;
+    const ignoreProperties: IgnoreProperty[] = _global['__Zone_ignore_on_properties'];
     // for browsers that we can patch the descriptor:  Chrome & Firefox
     if (isBrowser) {
       const internalWindow: any = window;
+      const ignoreErrorProperties =
+          isIE ? [{target: internalWindow, ignoreProperties: ['error']}] : [];
       // in IE/Edge, onProp not exist in window object, but in WindowPrototype
       // so we need to pass WindowPrototype to check onProp exist or not
       patchFilteredProperties(
-          internalWindow, eventNames.concat(['messageerror']), ignoreProperties,
+          internalWindow, eventNames.concat(['messageerror']),
+          ignoreProperties ? ignoreProperties.concat(ignoreErrorProperties) : ignoreProperties,
           ObjectGetPrototypeOf(internalWindow));
       patchFilteredProperties(Document.prototype, eventNames, ignoreProperties);
 
@@ -323,11 +331,7 @@ export function propertyDescriptorPatch(api: _ZonePrivate, _global: any) {
   } else {
     // Safari, Android browsers (Jelly Bean)
     patchViaCapturingAllTheEvents();
-    // BEGIN IQFY Patch - do not patch XMLHttpRequest when running tests
-    if (!window.testsAreRunning) {
-      patchClass('XMLHttpRequest');
-    }
-    // END IQFY Patch
+    patchClass('XMLHttpRequest');
     if (supportsWebSocket) {
       webSocketPatch.apply(api, _global);
     }
@@ -383,7 +387,7 @@ function canPatchViaPropertyDescriptor() {
     const detectFunc = () => {};
     req.onreadystatechange = detectFunc;
     const result = (req as any)[SYMBOL_FAKE_ONREADYSTATECHANGE] === detectFunc;
-    req.onreadystatechange = null;
+    req.onreadystatechange = null as any;
     return result;
   }
 }

@@ -37,7 +37,7 @@
         }
         return false;
     })();
-    var WtfZoneSpec = (function () {
+    var WtfZoneSpec = /** @class */ (function () {
         function WtfZoneSpec() {
             this.name = 'WTF';
         }
@@ -47,9 +47,10 @@
             return retValue;
         };
         WtfZoneSpec.prototype.onInvoke = function (parentZoneDelegate, currentZone, targetZone, delegate, applyThis, applyArgs, source) {
-            var scope = WtfZoneSpec.invokeScope[source];
+            var src = source || 'unknown';
+            var scope = WtfZoneSpec.invokeScope[src];
             if (!scope) {
-                scope = WtfZoneSpec.invokeScope[source] =
+                scope = WtfZoneSpec.invokeScope[src] =
                     wtfEvents.createScope("Zone:invoke:" + source + "(ascii zone)");
             }
             return wtfTrace.leaveScope(scope(zonePathName(targetZone)), parentZoneDelegate.invoke(targetZone, delegate, applyThis, applyArgs, source));
@@ -88,15 +89,15 @@
             instance(zonePathName(targetZone), shallowObj(task.data, 2));
             return retValue;
         };
+        WtfZoneSpec.forkInstance = wtfEnabled ? wtfEvents.createInstance('Zone:fork(ascii zone, ascii newZone)') : null;
+        WtfZoneSpec.scheduleInstance = {};
+        WtfZoneSpec.cancelInstance = {};
+        WtfZoneSpec.invokeScope = {};
+        WtfZoneSpec.invokeTaskScope = {};
         return WtfZoneSpec;
     }());
-    WtfZoneSpec.forkInstance = wtfEnabled && wtfEvents.createInstance('Zone:fork(ascii zone, ascii newZone)');
-    WtfZoneSpec.scheduleInstance = {};
-    WtfZoneSpec.cancelInstance = {};
-    WtfZoneSpec.invokeScope = {};
-    WtfZoneSpec.invokeTaskScope = {};
     function shallowObj(obj, depth) {
-        if (!depth)
+        if (!obj || !depth)
             return null;
         var out = {};
         for (var key in obj) {
@@ -118,10 +119,10 @@
     }
     function zonePathName(zone) {
         var name = zone.name;
-        zone = zone.parent;
-        while (zone != null) {
-            name = zone.name + '::' + name;
-            zone = zone.parent;
+        var localZone = zone.parent;
+        while (localZone != null) {
+            name = localZone.name + '::' + name;
+            localZone = localZone.parent;
         }
         return name;
     }

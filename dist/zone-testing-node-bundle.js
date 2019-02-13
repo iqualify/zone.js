@@ -19,7 +19,6 @@
  * found in the LICENSE file at https://angular.io/license
  */
 var Zone$1 = (function (global) {
-    var FUNCTION = 'function';
     var performance = global['performance'];
     function mark(name) {
         performance && performance['mark'] && performance['mark'](name);
@@ -28,12 +27,26 @@ var Zone$1 = (function (global) {
         performance && performance['measure'] && performance['measure'](name, label);
     }
     mark('Zone');
+    var checkDuplicate = global[('__zone_symbol__forceDuplicateZoneCheck')] === true;
     if (global['Zone']) {
-        throw new Error('Zone already loaded.');
+        // if global['Zone'] already exists (maybe zone.js was already loaded or
+        // some other lib also registered a global object named Zone), we may need
+        // to throw an error, but sometimes user may not want this error.
+        // For example,
+        // we have two web pages, page1 includes zone.js, page2 doesn't.
+        // and the 1st time user load page1 and page2, everything work fine,
+        // but when user load page2 again, error occurs because global['Zone'] already exists.
+        // so we add a flag to let user choose whether to throw this error or not.
+        // By default, if existing Zone is from zone.js, we will not throw the error.
+        if (checkDuplicate || typeof global['Zone'].__symbol__ !== 'function') {
+            throw new Error('Zone already loaded.');
+        }
+        else {
+            return global['Zone'];
+        }
     }
-    var Zone = (function () {
+    var Zone = /** @class */ (function () {
         function Zone(parent, zoneSpec) {
-            this._properties = null;
             this._parent = parent;
             this._name = zoneSpec ? zoneSpec.name || 'unnamed' : '<root>';
             this._properties = zoneSpec && zoneSpec.properties || {};
@@ -76,7 +89,9 @@ var Zone$1 = (function (global) {
         });
         Zone.__load_patch = function (name, fn) {
             if (patches.hasOwnProperty(name)) {
-                throw Error('Already loaded patch: ' + name);
+                if (checkDuplicate) {
+                    throw Error('Already loaded patch: ' + name);
+                }
             }
             else if (!global['__Zone_disable_' + name]) {
                 var perfName = 'Zone:' + name;
@@ -120,7 +135,7 @@ var Zone$1 = (function (global) {
             return this._zoneDelegate.fork(this, zoneSpec);
         };
         Zone.prototype.wrap = function (callback, source) {
-            if (typeof callback !== FUNCTION) {
+            if (typeof callback !== 'function') {
                 throw new Error('Expecting function got: ' + callback);
             }
             var _callback = this._zoneDelegate.intercept(this, callback, source);
@@ -130,9 +145,6 @@ var Zone$1 = (function (global) {
             };
         };
         Zone.prototype.run = function (callback, applyThis, applyArgs, source) {
-            if (applyThis === void 0) { applyThis = undefined; }
-            if (applyArgs === void 0) { applyArgs = null; }
-            if (source === void 0) { source = null; }
             _currentZoneFrame = { parent: _currentZoneFrame, zone: this };
             try {
                 return this._zoneDelegate.invoke(this, callback, applyThis, applyArgs, source);
@@ -143,8 +155,6 @@ var Zone$1 = (function (global) {
         };
         Zone.prototype.runGuarded = function (callback, applyThis, applyArgs, source) {
             if (applyThis === void 0) { applyThis = null; }
-            if (applyArgs === void 0) { applyArgs = null; }
-            if (source === void 0) { source = null; }
             _currentZoneFrame = { parent: _currentZoneFrame, zone: this };
             try {
                 try {
@@ -168,10 +178,7 @@ var Zone$1 = (function (global) {
             // https://github.com/angular/zone.js/issues/778, sometimes eventTask
             // will run in notScheduled(canceled) state, we should not try to
             // run such kind of task but just return
-            // we have to define an variable here, if not
-            // typescript compiler will complain below
-            var isNotScheduled = task.state === notScheduled;
-            if (isNotScheduled && task.type === eventTask) {
+            if (task.state === notScheduled && (task.type === eventTask || task.type === macroTask)) {
                 return;
             }
             var reEntryGuard = task.state != running;
@@ -182,7 +189,7 @@ var Zone$1 = (function (global) {
             _currentZoneFrame = { parent: _currentZoneFrame, zone: this };
             try {
                 if (task.type == macroTask && task.data && !task.data.isPeriodic) {
-                    task.cancelFn = null;
+                    task.cancelFn = undefined;
                 }
                 try {
                     return this._zoneDelegate.invokeTask(this, task, applyThis, applyArgs);
@@ -218,8 +225,7 @@ var Zone$1 = (function (global) {
                 var newZone = this;
                 while (newZone) {
                     if (newZone === task.zone) {
-                        throw Error("can not reschedule task to " + this
-                            .name + " which is descendants of the original zone " + task.zone.name);
+                        throw Error("can not reschedule task to " + this.name + " which is descendants of the original zone " + task.zone.name);
                     }
                     newZone = newZone.parent;
                 }
@@ -249,7 +255,7 @@ var Zone$1 = (function (global) {
             return task;
         };
         Zone.prototype.scheduleMicroTask = function (source, callback, data, customSchedule) {
-            return this.scheduleTask(new ZoneTask(microTask, source, callback, data, customSchedule, null));
+            return this.scheduleTask(new ZoneTask(microTask, source, callback, data, customSchedule, undefined));
         };
         Zone.prototype.scheduleMacroTask = function (source, callback, data, customSchedule, customCancel) {
             return this.scheduleTask(new ZoneTask(macroTask, source, callback, data, customSchedule, customCancel));
@@ -285,23 +291,21 @@ var Zone$1 = (function (global) {
                 zoneDelegates[i]._updateTaskCount(task.type, count);
             }
         };
+        Zone.__symbol__ = __symbol__;
         return Zone;
     }());
-    Zone.__symbol__ = __symbol__;
     var DELEGATE_ZS = {
         name: '',
-        onHasTask: function (delegate, _, target, hasTaskState) {
-            return delegate.hasTask(target, hasTaskState);
-        },
+        onHasTask: function (delegate, _, target, hasTaskState) { return delegate.hasTask(target, hasTaskState); },
         onScheduleTask: function (delegate, _, target, task) {
             return delegate.scheduleTask(target, task);
         },
-        onInvokeTask: function (delegate, _, target, task, applyThis, applyArgs) { return delegate.invokeTask(target, task, applyThis, applyArgs); },
-        onCancelTask: function (delegate, _, target, task) {
-            return delegate.cancelTask(target, task);
-        }
+        onInvokeTask: function (delegate, _, target, task, applyThis, applyArgs) {
+            return delegate.invokeTask(target, task, applyThis, applyArgs);
+        },
+        onCancelTask: function (delegate, _, target, task) { return delegate.cancelTask(target, task); }
     };
-    var ZoneDelegate = (function () {
+    var ZoneDelegate = /** @class */ (function () {
         function ZoneDelegate(zone, parentDelegate, zoneSpec) {
             this._taskCounts = { 'microTask': 0, 'macroTask': 0, 'eventTask': 0 };
             this.zone = zone;
@@ -327,8 +331,8 @@ var Zone$1 = (function (global) {
                 zoneSpec && (zoneSpec.onHandleError ? this.zone : parentDelegate.zone);
             this._scheduleTaskZS =
                 zoneSpec && (zoneSpec.onScheduleTask ? zoneSpec : parentDelegate._scheduleTaskZS);
-            this._scheduleTaskDlgt =
-                zoneSpec && (zoneSpec.onScheduleTask ? parentDelegate : parentDelegate._scheduleTaskDlgt);
+            this._scheduleTaskDlgt = zoneSpec &&
+                (zoneSpec.onScheduleTask ? parentDelegate : parentDelegate._scheduleTaskDlgt);
             this._scheduleTaskCurrZone =
                 zoneSpec && (zoneSpec.onScheduleTask ? this.zone : parentDelegate.zone);
             this._invokeTaskZS =
@@ -383,8 +387,7 @@ var Zone$1 = (function (global) {
                 callback;
         };
         ZoneDelegate.prototype.invoke = function (targetZone, callback, applyThis, applyArgs, source) {
-            return this._invokeZS ?
-                this._invokeZS.onInvoke(this._invokeDlgt, this._invokeCurrZone, targetZone, callback, applyThis, applyArgs, source) :
+            return this._invokeZS ? this._invokeZS.onInvoke(this._invokeDlgt, this._invokeCurrZone, targetZone, callback, applyThis, applyArgs, source) :
                 callback.apply(applyThis, applyArgs);
         };
         ZoneDelegate.prototype.handleError = function (targetZone, error) {
@@ -416,8 +419,7 @@ var Zone$1 = (function (global) {
             return returnTask;
         };
         ZoneDelegate.prototype.invokeTask = function (targetZone, task, applyThis, applyArgs) {
-            return this._invokeTaskZS ?
-                this._invokeTaskZS.onInvokeTask(this._invokeTaskDlgt, this._invokeTaskCurrZone, targetZone, task, applyThis, applyArgs) :
+            return this._invokeTaskZS ? this._invokeTaskZS.onInvokeTask(this._invokeTaskDlgt, this._invokeTaskCurrZone, targetZone, task, applyThis, applyArgs) :
                 task.callback.apply(applyThis, applyArgs);
         };
         ZoneDelegate.prototype.cancelTask = function (targetZone, task) {
@@ -437,7 +439,7 @@ var Zone$1 = (function (global) {
             // hasTask should not throw error so other ZoneDelegate
             // can still trigger hasTask callback
             try {
-                return this._hasTaskZS &&
+                this._hasTaskZS &&
                     this._hasTaskZS.onHasTask(this._hasTaskDlgt, this._hasTaskCurrZone, targetZone, isEmpty);
             }
             catch (err) {
@@ -463,7 +465,7 @@ var Zone$1 = (function (global) {
         };
         return ZoneDelegate;
     }());
-    var ZoneTask = (function () {
+    var ZoneTask = /** @class */ (function () {
         function ZoneTask(type, source, callback, options, scheduleFn, cancelFn) {
             this._zone = null;
             this.runCount = 0;
@@ -527,18 +529,12 @@ var Zone$1 = (function (global) {
                 }
             }
             else {
-                // BEGIN IQFY PATCH - do not throw an error for Zombie.js
-                if (!window.testsAreRunning) {
-                throw new Error(this.type + " '" + this.source + "': can not transition to '" + toState + "', expecting state '" + fromState1 + "'" + (fromState2 ?
-                    ' or \'' + fromState2 + '\'' :
-                    '') + ", was '" + this._state + "'.");
-                }
-                // END IQFY PATCH
+                throw new Error(this.type + " '" + this.source + "': can not transition to '" + toState + "', expecting state '" + fromState1 + "'" + (fromState2 ? ' or \'' + fromState2 + '\'' : '') + ", was '" + this._state + "'.");
             }
         };
         ZoneTask.prototype.toString = function () {
             if (this.data && typeof this.data.handleId !== 'undefined') {
-                return this.data.handleId;
+                return this.data.handleId.toString();
             }
             else {
                 return Object.prototype.toString.call(this);
@@ -579,7 +575,13 @@ var Zone$1 = (function (global) {
                 }
             }
             if (nativeMicroTaskQueuePromise) {
-                nativeMicroTaskQueuePromise[symbolThen](drainMicroTaskQueue);
+                var nativeThen = nativeMicroTaskQueuePromise[symbolThen];
+                if (!nativeThen) {
+                    // native Promise is not patchable, we need to use `then` directly
+                    // issue 1078
+                    nativeThen = nativeMicroTaskQueuePromise['then'];
+                }
+                nativeThen.call(nativeMicroTaskQueuePromise, drainMicroTaskQueue);
             }
             else {
                 global[symbolSetTimeout](drainMicroTaskQueue, 0);
@@ -626,12 +628,13 @@ var Zone$1 = (function (global) {
         patchEventTarget: function () { return []; },
         patchOnProperties: noop,
         patchMethod: function () { return noop; },
-        bindArguments: function () { return null; },
+        bindArguments: function () { return []; },
+        patchThen: function () { return noop; },
         setNativePromise: function (NativePromise) {
             // sometimes NativePromise.resolve static function
             // is not ready yet, (such as core-js/es6.promise)
             // so we need to check here.
-            if (NativePromise && typeof NativePromise.resolve === FUNCTION) {
+            if (NativePromise && typeof NativePromise.resolve === 'function') {
                 nativeMicroTaskQueuePromise = NativePromise.resolve(0);
             }
         },
@@ -647,13 +650,16 @@ var Zone$1 = (function (global) {
     return global['Zone'] = Zone;
 })(typeof window !== 'undefined' && window || typeof self !== 'undefined' && self || global);
 
-/**
- * @license
- * Copyright Google Inc. All Rights Reserved.
- *
- * Use of this source code is governed by an MIT-style license that can be
- * found in the LICENSE file at https://angular.io/license
- */
+var __values = (undefined && undefined.__values) || function (o) {
+    var m = typeof Symbol === "function" && o[Symbol.iterator], i = 0;
+    if (m) return m.call(o);
+    return {
+        next: function () {
+            if (o && i >= o.length) o = void 0;
+            return { value: o && o[i++], done: !o };
+        }
+    };
+};
 Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
     var ObjectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
     var ObjectDefineProperty = Object.defineProperty;
@@ -721,6 +727,9 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
     }
     var symbolState = __symbol__('state');
     var symbolValue = __symbol__('value');
+    var symbolFinally = __symbol__('finally');
+    var symbolParentPromiseValue = __symbol__('parentPromiseValue');
+    var symbolParentPromiseState = __symbol__('parentPromiseState');
     var source = 'Promise.then';
     var UNRESOLVED = null;
     var RESOLVED = true;
@@ -792,6 +801,15 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
                 promise[symbolState] = state;
                 var queue = promise[symbolValue];
                 promise[symbolValue] = value;
+                if (promise[symbolFinally] === symbolFinally) {
+                    // the promise is generated by Promise.prototype.finally
+                    if (state === RESOLVED) {
+                        // the state is resolved, should ignore the value
+                        // and use parent promise value
+                        promise[symbolState] = promise[symbolParentPromiseState];
+                        promise[symbolValue] = promise[symbolParentPromiseValue];
+                    }
+                }
                 // record task information in value when error occurs, so we can
                 // do some additional work such as render longStackTrace
                 if (state === REJECTED && value instanceof Error) {
@@ -854,20 +872,33 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
     }
     function scheduleResolveOrReject(promise, zone, chainPromise, onFulfilled, onRejected) {
         clearRejectedNoCatch(promise);
-        var delegate = promise[symbolState] ?
+        var promiseState = promise[symbolState];
+        var delegate = promiseState ?
             (typeof onFulfilled === 'function') ? onFulfilled : forwardResolution :
             (typeof onRejected === 'function') ? onRejected : forwardRejection;
         zone.scheduleMicroTask(source, function () {
             try {
-                resolvePromise(chainPromise, true, zone.run(delegate, undefined, [promise[symbolValue]]));
+                var parentPromiseValue = promise[symbolValue];
+                var isFinallyPromise = chainPromise && symbolFinally === chainPromise[symbolFinally];
+                if (isFinallyPromise) {
+                    // if the promise is generated from finally call, keep parent promise's state and value
+                    chainPromise[symbolParentPromiseValue] = parentPromiseValue;
+                    chainPromise[symbolParentPromiseState] = promiseState;
+                }
+                // should not pass value to finally callback
+                var value = zone.run(delegate, undefined, isFinallyPromise && delegate !== forwardRejection && delegate !== forwardResolution ?
+                    [] :
+                    [parentPromiseValue]);
+                resolvePromise(chainPromise, true, value);
             }
             catch (error) {
+                // if error occurs, should always return this error
                 resolvePromise(chainPromise, false, error);
             }
-        });
+        }, chainPromise);
     }
     var ZONE_AWARE_PROMISE_TO_STRING = 'function ZoneAwarePromise() { [native code] }';
-    var ZoneAwarePromise = (function () {
+    var ZoneAwarePromise = /** @class */ (function () {
         function ZoneAwarePromise(executor) {
             var promise = this;
             if (!(promise instanceof ZoneAwarePromise)) {
@@ -892,6 +923,7 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             return resolvePromise(new this(null), REJECTED, error);
         };
         ZoneAwarePromise.race = function (values) {
+            var e_1, _a;
             var resolve;
             var reject;
             var promise = new this(function (res, rej) {
@@ -904,40 +936,70 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             function onReject(error) {
                 promise && (promise = null || reject(error));
             }
-            for (var _i = 0, values_1 = values; _i < values_1.length; _i++) {
-                var value = values_1[_i];
-                if (!isThenable(value)) {
-                    value = this.resolve(value);
+            try {
+                for (var values_1 = __values(values), values_1_1 = values_1.next(); !values_1_1.done; values_1_1 = values_1.next()) {
+                    var value = values_1_1.value;
+                    if (!isThenable(value)) {
+                        value = this.resolve(value);
+                    }
+                    value.then(onResolve, onReject);
                 }
-                value.then(onResolve, onReject);
+            }
+            catch (e_1_1) { e_1 = { error: e_1_1 }; }
+            finally {
+                try {
+                    if (values_1_1 && !values_1_1.done && (_a = values_1.return)) _a.call(values_1);
+                }
+                finally { if (e_1) throw e_1.error; }
             }
             return promise;
         };
         ZoneAwarePromise.all = function (values) {
+            var e_2, _a;
             var resolve;
             var reject;
             var promise = new this(function (res, rej) {
                 resolve = res;
                 reject = rej;
             });
-            var count = 0;
+            // Start at 2 to prevent prematurely resolving if .then is called immediately.
+            var unresolvedCount = 2;
+            var valueIndex = 0;
             var resolvedValues = [];
-            for (var _i = 0, values_2 = values; _i < values_2.length; _i++) {
-                var value = values_2[_i];
+            var _loop_2 = function (value) {
                 if (!isThenable(value)) {
-                    value = this.resolve(value);
+                    value = this_1.resolve(value);
                 }
-                value.then((function (index) { return function (value) {
-                    resolvedValues[index] = value;
-                    count--;
-                    if (!count) {
+                var curValueIndex = valueIndex;
+                value.then(function (value) {
+                    resolvedValues[curValueIndex] = value;
+                    unresolvedCount--;
+                    if (unresolvedCount === 0) {
                         resolve(resolvedValues);
                     }
-                }; })(count), reject);
-                count++;
+                }, reject);
+                unresolvedCount++;
+                valueIndex++;
+            };
+            var this_1 = this;
+            try {
+                for (var values_2 = __values(values), values_2_1 = values_2.next(); !values_2_1.done; values_2_1 = values_2.next()) {
+                    var value = values_2_1.value;
+                    _loop_2(value);
+                }
             }
-            if (!count)
+            catch (e_2_1) { e_2 = { error: e_2_1 }; }
+            finally {
+                try {
+                    if (values_2_1 && !values_2_1.done && (_a = values_2.return)) _a.call(values_2);
+                }
+                finally { if (e_2) throw e_2.error; }
+            }
+            // Make the unresolvedCount zero-based again.
+            unresolvedCount -= 2;
+            if (unresolvedCount === 0) {
                 resolve(resolvedValues);
+            }
             return promise;
         };
         ZoneAwarePromise.prototype.then = function (onFulfilled, onRejected) {
@@ -953,6 +1015,18 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
         };
         ZoneAwarePromise.prototype.catch = function (onRejected) {
             return this.then(null, onRejected);
+        };
+        ZoneAwarePromise.prototype.finally = function (onFinally) {
+            var chainPromise = new this.constructor(null);
+            chainPromise[symbolFinally] = symbolFinally;
+            var zone = Zone.current;
+            if (this[symbolState] == UNRESOLVED) {
+                this[symbolValue].push(zone, chainPromise, onFinally, onFinally);
+            }
+            else {
+                scheduleResolveOrReject(this, zone, chainPromise, onFinally, onFinally);
+            }
+            return chainPromise;
         };
         return ZoneAwarePromise;
     }());
@@ -1003,15 +1077,15 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
     var symbolThenPatched = __symbol__('thenPatched');
     function patchThen(Ctor) {
         var proto = Ctor.prototype;
+        var prop = ObjectGetOwnPropertyDescriptor(proto, 'then');
+        if (prop && (prop.writable === false || !prop.configurable)) {
+            // check Ctor.prototype.then propertyDescriptor is writable or not
+            // in meteor env, writable is false, we should ignore such case
+            return;
+        }
         var originalThen = proto.then;
         // Keep a reference to the original method.
         proto[symbolThen] = originalThen;
-        // check Ctor.prototype.then propertyDescriptor is writable or not
-        // in meteor env, writable is false, we have to make it to be true.
-        var prop = ObjectGetOwnPropertyDescriptor(Ctor.prototype, 'then');
-        if (prop && prop.writable === false && prop.configurable) {
-            ObjectDefineProperty(Ctor.prototype, 'then', { writable: true });
-        }
         Ctor.prototype.then = function (onResolve, onReject) {
             var _this = this;
             var wrapped = new ZoneAwarePromise(function (resolve, reject) {
@@ -1021,25 +1095,9 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
         };
         Ctor[symbolThenPatched] = true;
     }
-    function zoneify(fn) {
-        return function () {
-            var resultPromise = fn.apply(this, arguments);
-            if (resultPromise instanceof ZoneAwarePromise) {
-                return resultPromise;
-            }
-            var ctor = resultPromise.constructor;
-            if (!ctor[symbolThenPatched]) {
-                patchThen(ctor);
-            }
-            return resultPromise;
-        };
-    }
+    api.patchThen = patchThen;
     if (NativePromise) {
         patchThen(NativePromise);
-        var fetch_1 = global['fetch'];
-        if (typeof fetch_1 == 'function') {
-            global['fetch'] = zoneify(fetch_1);
-        }
     }
     // This is not part of public API, but it is useful for tests, so we expose it.
     Promise[Zone.__symbol__('uncaughtPromiseErrors')] = _uncaughtPromiseErrors;
@@ -1060,13 +1118,7 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
  */
 // issue #989, to reduce bundle size, use short name
 /** Object.getOwnPropertyDescriptor */
-/**
- * @license
- * Copyright Google Inc. All Rights Reserved.
- *
- * Use of this source code is governed by an MIT-style license that can be
- * found in the LICENSE file at https://angular.io/license
- */ var ObjectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+var ObjectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
 /** Object.defineProperty */
 var ObjectDefineProperty = Object.defineProperty;
 /** Object.getPrototypeOf */
@@ -1124,7 +1176,7 @@ var isWebWorker = (typeof WorkerGlobalScope !== 'undefined' && self instanceof W
 // this code.
 var isNode = (!('nw' in _global) && typeof _global.process !== 'undefined' &&
     {}.toString.call(_global.process) === '[object process]');
-
+var isBrowser = !isNode && !isWebWorker && !!(isWindowExists && internalWindow['HTMLElement']);
 // we are in electron of nw, so we are both browser and nodejs
 // Make sure to access `process` through `_global` so that WebPack does not accidentally browserify
 // this code.
@@ -1145,9 +1197,23 @@ var wrapFn = function (event) {
     }
     var target = this || event.target || _global;
     var listener = target[eventNameSymbol];
-    var result = listener && listener.apply(this, arguments);
-    if (result != undefined && !result) {
-        event.preventDefault();
+    var result;
+    if (isBrowser && target === internalWindow && event.type === 'error') {
+        // window.onerror have different signiture
+        // https://developer.mozilla.org/en-US/docs/Web/API/GlobalEventHandlers/onerror#window.onerror
+        // and onerror callback will prevent default when callback return true
+        var errorEvent = event;
+        result = listener &&
+            listener.call(this, errorEvent.message, errorEvent.filename, errorEvent.lineno, errorEvent.colno, errorEvent.error);
+        if (result === true) {
+            event.preventDefault();
+        }
+    }
+    else {
+        result = listener && listener.apply(this, arguments);
+        if (result != undefined && !result) {
+            event.preventDefault();
+        }
     }
     return result;
 };
@@ -1163,6 +1229,10 @@ function patchProperty(obj, prop, prototype) {
     // if the descriptor not exists or is not configurable
     // just return
     if (!desc || !desc.configurable) {
+        return;
+    }
+    var onPropPatchedSymbol = zoneSymbol('on' + prop + 'patched');
+    if (obj.hasOwnProperty(onPropPatchedSymbol) && obj[onPropPatchedSymbol]) {
         return;
     }
     // A property descriptor cannot have getter/setter and be writable
@@ -1242,6 +1312,7 @@ function patchProperty(obj, prop, prototype) {
         return null;
     };
     ObjectDefineProperty(obj, prop, desc);
+    obj[onPropPatchedSymbol] = true;
 }
 function patchOnProperties(obj, properties, prototype) {
     if (properties) {
@@ -1264,6 +1335,33 @@ function patchOnProperties(obj, properties, prototype) {
 var originalInstanceKey = zoneSymbol('originalInstance');
 // wrap some native API on `window`
 
+function copySymbolProperties(src, dest) {
+    if (typeof Object.getOwnPropertySymbols !== 'function') {
+        return;
+    }
+    var symbols = Object.getOwnPropertySymbols(src);
+    symbols.forEach(function (symbol) {
+        var desc = Object.getOwnPropertyDescriptor(src, symbol);
+        Object.defineProperty(dest, symbol, {
+            get: function () {
+                return src[symbol];
+            },
+            set: function (value) {
+                if (desc && (!desc.writable || typeof desc.set !== 'function')) {
+                    // if src[symbol] is not writable or not have a setter, just return
+                    return;
+                }
+                src[symbol] = value;
+            },
+            enumerable: desc ? desc.enumerable : true,
+            configurable: desc ? desc.configurable : true
+        });
+    });
+}
+var shouldCopySymbolProperties = false;
+function setShouldCopySymbolProperties(flag) {
+    shouldCopySymbolProperties = flag;
+}
 function patchMethod(target, name, patchFn) {
     var proto = target;
     while (proto && !proto.hasOwnProperty(name)) {
@@ -1274,7 +1372,7 @@ function patchMethod(target, name, patchFn) {
         proto = target;
     }
     var delegateName = zoneSymbol(name);
-    var delegate;
+    var delegate = null;
     if (proto && !(delegate = proto[delegateName])) {
         delegate = proto[delegateName] = proto[name];
         // check whether proto[name] is writable
@@ -1286,6 +1384,9 @@ function patchMethod(target, name, patchFn) {
                 return patchDelegate_1(this, arguments);
             };
             attachOriginToPatched(proto[name], delegate);
+            if (shouldCopySymbolProperties) {
+                copySymbolProperties(delegate, proto[name]);
+            }
         }
     }
     return delegate;
@@ -1304,7 +1405,7 @@ function patchMacroTask(obj, funcName, metaCreator) {
     setNative = patchMethod(obj, funcName, function (delegate) { return function (self, args) {
         var meta = metaCreator(self, args);
         if (meta.cbIdx >= 0 && typeof args[meta.cbIdx] === 'function') {
-            return scheduleMacroTaskWithCurrentZone(meta.name, args[meta.cbIdx], meta, scheduleTask, null);
+            return scheduleMacroTaskWithCurrentZone(meta.name, args[meta.cbIdx], meta, scheduleTask);
         }
         else {
             // cause an error by calling it directly.
@@ -1346,14 +1447,13 @@ function attachOriginToPatched(patched, original) {
  */
 // override Function.prototype.toString to make zone.js patched function
 // look like native function
-Zone.__load_patch('toString', function (global, Zone) {
+Zone.__load_patch('toString', function (global) {
     // patch Func.prototype.toString to let them look like native
-    var originalFunctionToString = Zone['__zone_symbol__originalToString'] =
-        Function.prototype.toString;
+    var originalFunctionToString = Function.prototype.toString;
     var ORIGINAL_DELEGATE_SYMBOL = zoneSymbol('OriginalDelegate');
     var PROMISE_SYMBOL = zoneSymbol('Promise');
     var ERROR_SYMBOL = zoneSymbol('Error');
-    Function.prototype.toString = function () {
+    var newFunctionToString = function toString() {
         if (typeof this === 'function') {
             var originalDelegate = this[ORIGINAL_DELEGATE_SYMBOL];
             if (originalDelegate) {
@@ -1379,6 +1479,8 @@ Zone.__load_patch('toString', function (global, Zone) {
         }
         return originalFunctionToString.apply(this, arguments);
     };
+    newFunctionToString[ORIGINAL_DELEGATE_SYMBOL] = originalFunctionToString;
+    Function.prototype.toString = newFunctionToString;
     // patch Object.prototype.toString to let them look like native
     var originalObjectToString = Object.prototype.toString;
     var PROMISE_OBJECT_TO_STRING = '[object Promise]';
@@ -1397,10 +1499,39 @@ Zone.__load_patch('toString', function (global, Zone) {
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
+Zone.__load_patch('node_util', function (global, Zone, api) {
+    api.patchOnProperties = patchOnProperties;
+    api.patchMethod = patchMethod;
+    api.bindArguments = bindArguments;
+    setShouldCopySymbolProperties(true);
+});
+
+/**
+ * @license
+ * Copyright Google Inc. All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
 /**
  * @fileoverview
  * @suppress {missingRequire}
  */
+var passiveSupported = false;
+if (typeof window !== 'undefined') {
+    try {
+        var options = Object.defineProperty({}, 'passive', {
+            get: function () {
+                passiveSupported = true;
+            }
+        });
+        window.addEventListener('test', options, options);
+        window.removeEventListener('test', options, options);
+    }
+    catch (err) {
+        passiveSupported = false;
+    }
+}
 // an identifier to tell ZoneTask do not create a new invoke closure
 var OPTIMIZED_ZONE_EVENT_TASK_DATA = {
     useG: true
@@ -1536,6 +1667,7 @@ function patchEventTarget(_global, apis, patchOptions) {
         if (proto[zoneSymbolAddEventListener]) {
             return false;
         }
+        var eventNameToString = patchOptions && patchOptions.eventNameToString;
         // a shared global taskData to pass data for scheduleEventTask
         // so we do not need to create a new object just for pass some data
         var taskData = {};
@@ -1551,12 +1683,24 @@ function patchEventTarget(_global, apis, patchOptions) {
             nativePrependEventListener = proto[zoneSymbol(patchOptions.prepend)] =
                 proto[patchOptions.prepend];
         }
-        var customScheduleGlobal = function () {
+        function checkIsPassive(task) {
+            if (!passiveSupported && typeof taskData.options !== 'boolean' &&
+                typeof taskData.options !== 'undefined' && taskData.options !== null) {
+                // options is a non-null non-undefined object
+                // passive is not supported
+                // don't pass options as object
+                // just pass capture as a boolean
+                task.options = !!taskData.options.capture;
+                taskData.options = task.options;
+            }
+        }
+        var customScheduleGlobal = function (task) {
             // if there is already a task for the eventName + capture,
             // just return, because we use the shared globalZoneAwareCallback here.
             if (taskData.isExisting) {
                 return;
             }
+            checkIsPassive(task);
             return nativeAddEventListener.call(taskData.target, taskData.eventName, taskData.capture ? globalZoneAwareCaptureCallback : globalZoneAwareCallback, taskData.options);
         };
         var customCancelGlobal = function (task) {
@@ -1597,6 +1741,7 @@ function patchEventTarget(_global, apis, patchOptions) {
             return nativeRemoveEventListener.call(task.target, task.eventName, task.capture ? globalZoneAwareCaptureCallback : globalZoneAwareCallback, task.options);
         };
         var customScheduleNonGlobal = function (task) {
+            checkIsPassive(task);
             return nativeAddEventListener.call(taskData.target, taskData.eventName, task.invoke, taskData.options);
         };
         var customSchedulePrepend = function (task) {
@@ -1619,8 +1764,13 @@ function patchEventTarget(_global, apis, patchOptions) {
             if (prepend === void 0) { prepend = false; }
             return function () {
                 var target = this || _global;
+                var eventName = arguments[0];
                 var delegate = arguments[1];
                 if (!delegate) {
+                    return nativeListener.apply(this, arguments);
+                }
+                if (isNode && eventName === 'uncaughtException') {
+                    // don't patch uncaughtException of nodejs to prevent endless loop
                     return nativeListener.apply(this, arguments);
                 }
                 // don't create the bind delegate function for handleEvent
@@ -1636,7 +1786,6 @@ function patchEventTarget(_global, apis, patchOptions) {
                 if (validateHandler && !validateHandler(nativeListener, delegate, target, arguments)) {
                     return;
                 }
-                var eventName = arguments[0];
                 var options = arguments[2];
                 if (blackListedEvents) {
                     // check black list
@@ -1666,8 +1815,8 @@ function patchEventTarget(_global, apis, patchOptions) {
                 var symbolEventName;
                 if (!symbolEventNames) {
                     // the code is duplicate, but I just want to get some better performance
-                    var falseEventName = eventName + FALSE_STR;
-                    var trueEventName = eventName + TRUE_STR;
+                    var falseEventName = (eventNameToString ? eventNameToString(eventName) : eventName) + FALSE_STR;
+                    var trueEventName = (eventNameToString ? eventNameToString(eventName) : eventName) + TRUE_STR;
                     var symbol = ZONE_SYMBOL_PREFIX + falseEventName;
                     var symbolCapture = ZONE_SYMBOL_PREFIX + trueEventName;
                     zoneSymbolEventNames$1[eventName] = {};
@@ -1702,7 +1851,8 @@ function patchEventTarget(_global, apis, patchOptions) {
                     source = targetSource[eventName];
                 }
                 if (!source) {
-                    source = constructorName + addSource + eventName;
+                    source = constructorName + addSource +
+                        (eventNameToString ? eventNameToString(eventName) : eventName);
                 }
                 // do not create a new object as task.data to pass those things
                 // just use the global shared one
@@ -1717,7 +1867,7 @@ function patchEventTarget(_global, apis, patchOptions) {
                 taskData.capture = capture;
                 taskData.eventName = eventName;
                 taskData.isExisting = isExisting;
-                var data = useGlobalCallback ? OPTIMIZED_ZONE_EVENT_TASK_DATA : null;
+                var data = useGlobalCallback ? OPTIMIZED_ZONE_EVENT_TASK_DATA : undefined;
                 // keep taskData into data to allow onScheduleEventTask to access the task information
                 if (data) {
                     data.taskData = taskData;
@@ -1735,7 +1885,11 @@ function patchEventTarget(_global, apis, patchOptions) {
                 if (once) {
                     options.once = true;
                 }
-                task.options = options;
+                if (!(!passiveSupported && typeof task.options === 'boolean')) {
+                    // if not support passive, and we pass an option object
+                    // to addEventListener, we should save the options to task
+                    task.options = options;
+                }
                 task.target = target;
                 task.capture = capture;
                 task.eventName = eventName;
@@ -1803,6 +1957,9 @@ function patchEventTarget(_global, apis, patchOptions) {
                             target[symbolEventName] = null;
                         }
                         existingTask.zone.cancelTask(existingTask);
+                        if (returnTarget) {
+                            return target;
+                        }
                         return;
                     }
                 }
@@ -1817,7 +1974,7 @@ function patchEventTarget(_global, apis, patchOptions) {
             var target = this || _global;
             var eventName = arguments[0];
             var listeners = [];
-            var tasks = findEventTasks(target, eventName);
+            var tasks = findEventTasks(target, eventNameToString ? eventNameToString(eventName) : eventName);
             for (var i = 0; i < tasks.length; i++) {
                 var task = tasks[i];
                 var delegate = task.originalDelegate ? task.originalDelegate : task.callback;
@@ -1869,6 +2026,9 @@ function patchEventTarget(_global, apis, patchOptions) {
                         }
                     }
                 }
+            }
+            if (returnTarget) {
+                return this;
             }
         };
         // for native toString patch
@@ -1924,6 +2084,15 @@ Zone.__load_patch('EventEmitter', function (global) {
         // same callback, same capture, same event name, just return
         return task.callback === delegate || task.callback.listener === delegate;
     };
+    var eventNameToString = function (eventName) {
+        if (typeof eventName === 'string') {
+            return eventName;
+        }
+        if (!eventName) {
+            return '';
+        }
+        return eventName.toString().replace('(', '_').replace(')', '_');
+    };
     function patchEventEmitterMethods(obj) {
         var result = patchEventTarget(global, [obj], {
             useG: false,
@@ -1934,7 +2103,8 @@ Zone.__load_patch('EventEmitter', function (global) {
             listeners: EE_LISTENERS,
             chkDup: false,
             rt: true,
-            diff: compareTaskCallbackVsDelegate
+            diff: compareTaskCallbackVsDelegate,
+            eventNameToString: eventNameToString
         });
         if (result && result[0]) {
             obj[EE_ON] = obj[EE_ADD_LISTENER];
@@ -2043,9 +2213,9 @@ function patchTimer(window, setName, cancelName, nameSuffix) {
         patchMethod(window, setName, function (delegate) { return function (self, args) {
             if (typeof args[0] === 'function') {
                 var options = {
-                    handleId: null,
                     isPeriodic: nameSuffix === 'Interval',
-                    delay: (nameSuffix === 'Timeout' || nameSuffix === 'Interval') ? args[1] || 0 : null,
+                    delay: (nameSuffix === 'Timeout' || nameSuffix === 'Interval') ? args[1] || 0 :
+                        undefined,
                     args: args
                 };
                 var task = scheduleMacroTaskWithCurrentZone(setName, args[0], options, scheduleTask, clearTask);
@@ -2126,11 +2296,6 @@ function patchTimer(window, setName, cancelName, nameSuffix) {
  */
 var set = 'set';
 var clear = 'clear';
-Zone.__load_patch('node_util', function (global, Zone, api) {
-    api.patchOnProperties = patchOnProperties;
-    api.patchMethod = patchMethod;
-    api.bindArguments = bindArguments;
-});
 Zone.__load_patch('node_timers', function (global, Zone) {
     // Timers
     var globalUseTimeoutFromTimer = false;
@@ -2287,7 +2452,7 @@ var creationTrace = '__creationTrace__';
 var ERROR_TAG = 'STACKTRACE TRACKING';
 var SEP_TAG = '__SEP_TAG__';
 var sepTemplate = SEP_TAG + '@[native]';
-var LongStackTrace = (function () {
+var LongStackTrace = /** @class */ (function () {
     function LongStackTrace() {
         this.error = getStacktrace();
         this.timestamp = new Date();
@@ -2307,9 +2472,9 @@ function getStacktraceWithCaughtError() {
 }
 // Some implementations of exception handling don't create a stack trace if the exception
 // isn't thrown, however it's faster not to actually throw the exception.
-var error$1 = getStacktraceWithUncaughtError();
+var error = getStacktraceWithUncaughtError();
 var caughtError = getStacktraceWithCaughtError();
-var getStacktrace = error$1.stack ?
+var getStacktrace = error.stack ?
     getStacktraceWithUncaughtError :
     (caughtError.stack ? getStacktraceWithCaughtError : getStacktraceWithUncaughtError);
 function getFrames(error) {
@@ -2437,13 +2602,17 @@ computeIgnoreFrames();
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-var ProxyZoneSpec = (function () {
+var ProxyZoneSpec = /** @class */ (function () {
     function ProxyZoneSpec(defaultSpecDelegate) {
         if (defaultSpecDelegate === void 0) { defaultSpecDelegate = null; }
         this.defaultSpecDelegate = defaultSpecDelegate;
         this.name = 'ProxyZone';
+        this._delegateSpec = null;
         this.properties = { 'ProxyZoneSpec': this };
         this.propertyKeys = null;
+        this.lastTaskState = null;
+        this.isNeedToTriggerHasTask = false;
+        this.tasks = [];
         this.setDelegate(defaultSpecDelegate);
     }
     ProxyZoneSpec.get = function () {
@@ -2453,13 +2622,14 @@ var ProxyZoneSpec = (function () {
         return ProxyZoneSpec.get() instanceof ProxyZoneSpec;
     };
     ProxyZoneSpec.assertPresent = function () {
-        if (!this.isLoaded()) {
+        if (!ProxyZoneSpec.isLoaded()) {
             throw new Error("Expected to be running in 'ProxyZone', but it was not found.");
         }
         return ProxyZoneSpec.get();
     };
     ProxyZoneSpec.prototype.setDelegate = function (delegateSpec) {
         var _this = this;
+        var isNewDelegate = this._delegateSpec !== delegateSpec;
         this._delegateSpec = delegateSpec;
         this.propertyKeys && this.propertyKeys.forEach(function (key) { return delete _this.properties[key]; });
         this.propertyKeys = null;
@@ -2467,12 +2637,56 @@ var ProxyZoneSpec = (function () {
             this.propertyKeys = Object.keys(delegateSpec.properties);
             this.propertyKeys.forEach(function (k) { return _this.properties[k] = delegateSpec.properties[k]; });
         }
+        // if set a new delegateSpec, shoulde check whether need to
+        // trigger hasTask or not
+        if (isNewDelegate && this.lastTaskState &&
+            (this.lastTaskState.macroTask || this.lastTaskState.microTask)) {
+            this.isNeedToTriggerHasTask = true;
+        }
     };
     ProxyZoneSpec.prototype.getDelegate = function () {
         return this._delegateSpec;
     };
     ProxyZoneSpec.prototype.resetDelegate = function () {
+        var delegateSpec = this.getDelegate();
         this.setDelegate(this.defaultSpecDelegate);
+    };
+    ProxyZoneSpec.prototype.tryTriggerHasTask = function (parentZoneDelegate, currentZone, targetZone) {
+        if (this.isNeedToTriggerHasTask && this.lastTaskState) {
+            // last delegateSpec has microTask or macroTask
+            // should call onHasTask in current delegateSpec
+            this.isNeedToTriggerHasTask = false;
+            this.onHasTask(parentZoneDelegate, currentZone, targetZone, this.lastTaskState);
+        }
+    };
+    ProxyZoneSpec.prototype.removeFromTasks = function (task) {
+        if (!this.tasks) {
+            return;
+        }
+        for (var i = 0; i < this.tasks.length; i++) {
+            if (this.tasks[i] === task) {
+                this.tasks.splice(i, 1);
+                return;
+            }
+        }
+    };
+    ProxyZoneSpec.prototype.getAndClearPendingTasksInfo = function () {
+        if (this.tasks.length === 0) {
+            return '';
+        }
+        var taskInfo = this.tasks.map(function (task) {
+            var dataInfo = task.data &&
+                Object.keys(task.data)
+                    .map(function (key) {
+                    return key + ':' + task.data[key];
+                })
+                    .join(',');
+            return "type: " + task.type + ", source: " + task.source + ", args: {" + dataInfo + "}";
+        });
+        var pendingTasksInfo = '--Pendng async tasks are: [' + taskInfo + ']';
+        // clear tasks
+        this.tasks = [];
+        return pendingTasksInfo;
     };
     ProxyZoneSpec.prototype.onFork = function (parentZoneDelegate, currentZone, targetZone, zoneSpec) {
         if (this._delegateSpec && this._delegateSpec.onFork) {
@@ -2491,6 +2705,7 @@ var ProxyZoneSpec = (function () {
         }
     };
     ProxyZoneSpec.prototype.onInvoke = function (parentZoneDelegate, currentZone, targetZone, delegate, applyThis, applyArgs, source) {
+        this.tryTriggerHasTask(parentZoneDelegate, currentZone, targetZone);
         if (this._delegateSpec && this._delegateSpec.onInvoke) {
             return this._delegateSpec.onInvoke(parentZoneDelegate, currentZone, targetZone, delegate, applyThis, applyArgs, source);
         }
@@ -2507,6 +2722,9 @@ var ProxyZoneSpec = (function () {
         }
     };
     ProxyZoneSpec.prototype.onScheduleTask = function (parentZoneDelegate, currentZone, targetZone, task) {
+        if (task.type !== 'eventTask') {
+            this.tasks.push(task);
+        }
         if (this._delegateSpec && this._delegateSpec.onScheduleTask) {
             return this._delegateSpec.onScheduleTask(parentZoneDelegate, currentZone, targetZone, task);
         }
@@ -2515,7 +2733,11 @@ var ProxyZoneSpec = (function () {
         }
     };
     ProxyZoneSpec.prototype.onInvokeTask = function (parentZoneDelegate, currentZone, targetZone, task, applyThis, applyArgs) {
-        if (this._delegateSpec && this._delegateSpec.onFork) {
+        if (task.type !== 'eventTask') {
+            this.removeFromTasks(task);
+        }
+        this.tryTriggerHasTask(parentZoneDelegate, currentZone, targetZone);
+        if (this._delegateSpec && this._delegateSpec.onInvokeTask) {
             return this._delegateSpec.onInvokeTask(parentZoneDelegate, currentZone, targetZone, task, applyThis, applyArgs);
         }
         else {
@@ -2523,6 +2745,10 @@ var ProxyZoneSpec = (function () {
         }
     };
     ProxyZoneSpec.prototype.onCancelTask = function (parentZoneDelegate, currentZone, targetZone, task) {
+        if (task.type !== 'eventTask') {
+            this.removeFromTasks(task);
+        }
+        this.tryTriggerHasTask(parentZoneDelegate, currentZone, targetZone);
         if (this._delegateSpec && this._delegateSpec.onCancelTask) {
             return this._delegateSpec.onCancelTask(parentZoneDelegate, currentZone, targetZone, task);
         }
@@ -2531,6 +2757,7 @@ var ProxyZoneSpec = (function () {
         }
     };
     ProxyZoneSpec.prototype.onHasTask = function (delegate, current, target, hasTaskState) {
+        this.lastTaskState = hasTaskState;
         if (this._delegateSpec && this._delegateSpec.onHasTask) {
             this._delegateSpec.onHasTask(delegate, current, target, hasTaskState);
         }
@@ -2551,7 +2778,7 @@ Zone['ProxyZoneSpec'] = ProxyZoneSpec;
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-var SyncTestZoneSpec = (function () {
+var SyncTestZoneSpec = /** @class */ (function () {
     function SyncTestZoneSpec(namePrefix) {
         this.runZone = Zone.current;
         this.name = 'syncTestZone for ' + namePrefix;
@@ -2590,6 +2817,7 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
         }
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
+    var _global = typeof window !== 'undefined' && window || typeof self !== 'undefined' && self || global;
     // Patch jasmine's describe/it/beforeEach/afterEach functions so test code always runs
     // in a testZone (ProxyZone). (See: angular/zone.js#91 & angular/angular#10503)
     if (!Zone)
@@ -2597,7 +2825,7 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
     if (typeof jasmine == 'undefined')
         throw new Error('Missing: jasmine.js');
     if (jasmine['__zone_patch__'])
-        throw new Error('\'jasmine\' has already been patched with \'Zone\'.');
+        throw new Error("'jasmine' has already been patched with 'Zone'.");
     jasmine['__zone_patch__'] = true;
     var SyncTestZoneSpec = Zone['SyncTestZoneSpec'];
     var ProxyZoneSpec = Zone['ProxyZoneSpec'];
@@ -2610,16 +2838,9 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
     // error if any asynchronous operations are attempted inside of a `describe` but outside of
     // a `beforeEach` or `it`.
     var syncZone = ambientZone.fork(new SyncTestZoneSpec('jasmine.describe'));
-    // This is the zone which will be used for running individual tests.
-    // It will be a proxy zone, so that the tests function can retroactively install
-    // different zones.
-    // Example:
-    //   - In beforeEach() do childZone = Zone.current.fork(...);
-    //   - In it() try to do fakeAsync(). The issue is that because the beforeEach forked the
-    //     zone outside of fakeAsync it will be able to escape the fakeAsync rules.
-    //   - Because ProxyZone is parent fo `childZone` fakeAsync can retroactively add
-    //     fakeAsync behavior to the childZone.
-    var testProxyZone = null;
+    var symbol = Zone.__symbol__;
+    // whether patch jasmine clock when in fakeAsync
+    var enableClockPatch = _global[symbol('fakeAsyncPatchLock')] === true;
     // Monkey patch all of the jasmine DSL so that each function runs in appropriate zone.
     var jasmineEnv = jasmine.getEnv();
     ['describe', 'xdescribe', 'fdescribe'].forEach(function (methodName) {
@@ -2630,20 +2851,62 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
     });
     ['it', 'xit', 'fit'].forEach(function (methodName) {
         var originalJasmineFn = jasmineEnv[methodName];
-        jasmineEnv[Zone.__symbol__(methodName)] = originalJasmineFn;
+        jasmineEnv[symbol(methodName)] = originalJasmineFn;
         jasmineEnv[methodName] = function (description, specDefinitions, timeout) {
             arguments[1] = wrapTestInZone(specDefinitions);
             return originalJasmineFn.apply(this, arguments);
         };
     });
-    ['beforeEach', 'afterEach'].forEach(function (methodName) {
+    ['beforeEach', 'afterEach', 'beforeAll', 'afterAll'].forEach(function (methodName) {
         var originalJasmineFn = jasmineEnv[methodName];
-        jasmineEnv[Zone.__symbol__(methodName)] = originalJasmineFn;
+        jasmineEnv[symbol(methodName)] = originalJasmineFn;
         jasmineEnv[methodName] = function (specDefinitions, timeout) {
             arguments[0] = wrapTestInZone(specDefinitions);
             return originalJasmineFn.apply(this, arguments);
         };
     });
+    // need to patch jasmine.clock().mockDate and jasmine.clock().tick() so
+    // they can work properly in FakeAsyncTest
+    var originalClockFn = (jasmine[symbol('clock')] = jasmine['clock']);
+    jasmine['clock'] = function () {
+        var clock = originalClockFn.apply(this, arguments);
+        if (!clock[symbol('patched')]) {
+            clock[symbol('patched')] = symbol('patched');
+            var originalTick_1 = (clock[symbol('tick')] = clock.tick);
+            clock.tick = function () {
+                var fakeAsyncZoneSpec = Zone.current.get('FakeAsyncTestZoneSpec');
+                if (fakeAsyncZoneSpec) {
+                    return fakeAsyncZoneSpec.tick.apply(fakeAsyncZoneSpec, arguments);
+                }
+                return originalTick_1.apply(this, arguments);
+            };
+            var originalMockDate_1 = (clock[symbol('mockDate')] = clock.mockDate);
+            clock.mockDate = function () {
+                var fakeAsyncZoneSpec = Zone.current.get('FakeAsyncTestZoneSpec');
+                if (fakeAsyncZoneSpec) {
+                    var dateTime = arguments.length > 0 ? arguments[0] : new Date();
+                    return fakeAsyncZoneSpec.setCurrentRealTime.apply(fakeAsyncZoneSpec, dateTime && typeof dateTime.getTime === 'function' ? [dateTime.getTime()] :
+                        arguments);
+                }
+                return originalMockDate_1.apply(this, arguments);
+            };
+            // for auto go into fakeAsync feature, we need the flag to enable it
+            if (enableClockPatch) {
+                ['install', 'uninstall'].forEach(function (methodName) {
+                    var originalClockFn = (clock[symbol(methodName)] = clock[methodName]);
+                    clock[methodName] = function () {
+                        var FakeAsyncTestZoneSpec = Zone['FakeAsyncTestZoneSpec'];
+                        if (FakeAsyncTestZoneSpec) {
+                            jasmine[symbol('clockInstalled')] = 'install' === methodName;
+                            return;
+                        }
+                        return originalClockFn.apply(this, arguments);
+                    };
+                });
+            }
+        }
+        return clock;
+    };
     /**
      * Gets a function wrapping the body of a Jasmine `describe` block to execute in a
      * synchronous-only zone.
@@ -2652,6 +2915,24 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
         return function () {
             return syncZone.run(describeBody, this, arguments);
         };
+    }
+    function runInTestZone(testBody, applyThis, queueRunner, done) {
+        var isClockInstalled = !!jasmine[symbol('clockInstalled')];
+        var testProxyZoneSpec = queueRunner.testProxyZoneSpec;
+        var testProxyZone = queueRunner.testProxyZone;
+        if (isClockInstalled && enableClockPatch) {
+            // auto run a fakeAsync
+            var fakeAsyncModule = Zone[Zone.__symbol__('fakeAsyncTest')];
+            if (fakeAsyncModule && typeof fakeAsyncModule.fakeAsync === 'function') {
+                testBody = fakeAsyncModule.fakeAsync(testBody);
+            }
+        }
+        if (done) {
+            return testProxyZone.run(testBody, applyThis, [done]);
+        }
+        else {
+            return testProxyZone.run(testBody, applyThis);
+        }
     }
     /**
      * Gets a function wrapping the body of a Jasmine `it/beforeEach/afterEach` block to
@@ -2662,28 +2943,90 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
         // The `done` callback is only passed through if the function expects at least one argument.
         // Note we have to make a function with correct number of arguments, otherwise jasmine will
         // think that all functions are sync or async.
-        return testBody && (testBody.length ? function (done) {
-            return testProxyZone.run(testBody, this, [done]);
+        return (testBody && (testBody.length ? function (done) {
+            return runInTestZone(testBody, this, this.queueRunner, done);
         } : function () {
-            return testProxyZone.run(testBody, this);
-        });
+            return runInTestZone(testBody, this, this.queueRunner);
+        }));
     }
     var QueueRunner = jasmine.QueueRunner;
     jasmine.QueueRunner = (function (_super) {
         __extends(ZoneQueueRunner, _super);
         function ZoneQueueRunner(attrs) {
+            var _this = this;
             attrs.onComplete = (function (fn) { return function () {
                 // All functions are done, clear the test zone.
-                testProxyZone = null;
+                _this.testProxyZone = null;
+                _this.testProxyZoneSpec = null;
                 ambientZone.scheduleMicroTask('jasmine.onComplete', fn);
             }; })(attrs.onComplete);
+            var nativeSetTimeout = _global['__zone_symbol__setTimeout'];
+            var nativeClearTimeout = _global['__zone_symbol__clearTimeout'];
+            if (nativeSetTimeout) {
+                // should run setTimeout inside jasmine outside of zone
+                attrs.timeout = {
+                    setTimeout: nativeSetTimeout ? nativeSetTimeout : _global.setTimeout,
+                    clearTimeout: nativeClearTimeout ? nativeClearTimeout : _global.clearTimeout
+                };
+            }
+            // create a userContext to hold the queueRunner itself
+            // so we can access the testProxy in it/xit/beforeEach ...
+            if (jasmine.UserContext) {
+                if (!attrs.userContext) {
+                    attrs.userContext = new jasmine.UserContext();
+                }
+                attrs.userContext.queueRunner = this;
+            }
+            else {
+                if (!attrs.userContext) {
+                    attrs.userContext = {};
+                }
+                attrs.userContext.queueRunner = this;
+            }
+            // patch attrs.onException
+            var onException = attrs.onException;
+            attrs.onException = function (error) {
+                if (error &&
+                    error.message ===
+                        'Timeout - Async callback was not invoked within timeout specified by jasmine.DEFAULT_TIMEOUT_INTERVAL.') {
+                    // jasmine timeout, we can make the error message more
+                    // reasonable to tell what tasks are pending
+                    var proxyZoneSpec = this && this.testProxyZoneSpec;
+                    if (proxyZoneSpec) {
+                        var pendingTasksInfo = proxyZoneSpec.getAndClearPendingTasksInfo();
+                        error.message += pendingTasksInfo;
+                    }
+                }
+                if (onException) {
+                    onException.call(this, error);
+                }
+            };
             _super.call(this, attrs);
         }
         ZoneQueueRunner.prototype.execute = function () {
             var _this = this;
-            if (Zone.current !== ambientZone)
+            var zone = Zone.current;
+            var isChildOfAmbientZone = false;
+            while (zone) {
+                if (zone === ambientZone) {
+                    isChildOfAmbientZone = true;
+                    break;
+                }
+                zone = zone.parent;
+            }
+            if (!isChildOfAmbientZone)
                 throw new Error('Unexpected Zone: ' + Zone.current.name);
-            testProxyZone = ambientZone.fork(new ProxyZoneSpec());
+            // This is the zone which will be used for running individual tests.
+            // It will be a proxy zone, so that the tests function can retroactively install
+            // different zones.
+            // Example:
+            //   - In beforeEach() do childZone = Zone.current.fork(...);
+            //   - In it() try to do fakeAsync(). The issue is that because the beforeEach forked the
+            //     zone outside of fakeAsync it will be able to escape the fakeAsync rules.
+            //   - Because ProxyZone is parent fo `childZone` fakeAsync can retroactively add
+            //     fakeAsync behavior to the childZone.
+            this.testProxyZoneSpec = new ProxyZoneSpec();
+            this.testProxyZone = ambientZone.fork(this.testProxyZoneSpec);
             if (!Zone.currentTask) {
                 // if we are not running in a task then if someone would register a
                 // element.addEventListener and then calling element.click() the
@@ -2697,7 +3040,7 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
             }
         };
         return ZoneQueueRunner;
-    }(QueueRunner));
+    })(QueueRunner);
 })();
 
 /**
@@ -2707,45 +3050,105 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-var AsyncTestZoneSpec = (function () {
+var _global$1 = typeof window !== 'undefined' && window || typeof self !== 'undefined' && self || global;
+var AsyncTestZoneSpec = /** @class */ (function () {
     function AsyncTestZoneSpec(finishCallback, failCallback, namePrefix) {
+        this.finishCallback = finishCallback;
+        this.failCallback = failCallback;
         this._pendingMicroTasks = false;
         this._pendingMacroTasks = false;
         this._alreadyErrored = false;
+        this._isSync = false;
         this.runZone = Zone.current;
-        this._finishCallback = finishCallback;
-        this._failCallback = failCallback;
+        this.unresolvedChainedPromiseCount = 0;
+        this.supportWaitUnresolvedChainedPromise = false;
         this.name = 'asyncTestZone for ' + namePrefix;
+        this.properties = { 'AsyncTestZoneSpec': this };
+        this.supportWaitUnresolvedChainedPromise =
+            _global$1[Zone.__symbol__('supportWaitUnResolvedChainedPromise')] === true;
     }
+    AsyncTestZoneSpec.prototype.isUnresolvedChainedPromisePending = function () {
+        return this.unresolvedChainedPromiseCount > 0;
+    };
     AsyncTestZoneSpec.prototype._finishCallbackIfDone = function () {
         var _this = this;
-        if (!(this._pendingMicroTasks || this._pendingMacroTasks)) {
+        if (!(this._pendingMicroTasks || this._pendingMacroTasks ||
+            (this.supportWaitUnresolvedChainedPromise && this.isUnresolvedChainedPromisePending()))) {
             // We do this because we would like to catch unhandled rejected promises.
             this.runZone.run(function () {
                 setTimeout(function () {
                     if (!_this._alreadyErrored && !(_this._pendingMicroTasks || _this._pendingMacroTasks)) {
-                        _this._finishCallback();
+                        _this.finishCallback();
                     }
                 }, 0);
             });
         }
     };
+    AsyncTestZoneSpec.prototype.patchPromiseForTest = function () {
+        if (!this.supportWaitUnresolvedChainedPromise) {
+            return;
+        }
+        var patchPromiseForTest = Promise[Zone.__symbol__('patchPromiseForTest')];
+        if (patchPromiseForTest) {
+            patchPromiseForTest();
+        }
+    };
+    AsyncTestZoneSpec.prototype.unPatchPromiseForTest = function () {
+        if (!this.supportWaitUnresolvedChainedPromise) {
+            return;
+        }
+        var unPatchPromiseForTest = Promise[Zone.__symbol__('unPatchPromiseForTest')];
+        if (unPatchPromiseForTest) {
+            unPatchPromiseForTest();
+        }
+    };
+    AsyncTestZoneSpec.prototype.onScheduleTask = function (delegate, current, target, task) {
+        if (task.type !== 'eventTask') {
+            this._isSync = false;
+        }
+        if (task.type === 'microTask' && task.data && task.data instanceof Promise) {
+            // check whether the promise is a chained promise
+            if (task.data[AsyncTestZoneSpec.symbolParentUnresolved] === true) {
+                // chained promise is being scheduled
+                this.unresolvedChainedPromiseCount--;
+            }
+        }
+        return delegate.scheduleTask(target, task);
+    };
+    AsyncTestZoneSpec.prototype.onInvokeTask = function (delegate, current, target, task, applyThis, applyArgs) {
+        if (task.type !== 'eventTask') {
+            this._isSync = false;
+        }
+        return delegate.invokeTask(target, task, applyThis, applyArgs);
+    };
+    AsyncTestZoneSpec.prototype.onCancelTask = function (delegate, current, target, task) {
+        if (task.type !== 'eventTask') {
+            this._isSync = false;
+        }
+        return delegate.cancelTask(target, task);
+    };
     // Note - we need to use onInvoke at the moment to call finish when a test is
     // fully synchronous. TODO(juliemr): remove this when the logic for
     // onHasTask changes and it calls whenever the task queues are dirty.
+    // updated by(JiaLiPassion), only call finish callback when no task
+    // was scheduled/invoked/canceled.
     AsyncTestZoneSpec.prototype.onInvoke = function (parentZoneDelegate, currentZone, targetZone, delegate, applyThis, applyArgs, source) {
         try {
+            this._isSync = true;
             return parentZoneDelegate.invoke(targetZone, delegate, applyThis, applyArgs, source);
         }
         finally {
-            this._finishCallbackIfDone();
+            var afterTaskCounts = parentZoneDelegate._taskCounts;
+            if (this._isSync) {
+                this._finishCallbackIfDone();
+            }
         }
     };
     AsyncTestZoneSpec.prototype.onHandleError = function (parentZoneDelegate, currentZone, targetZone, error) {
         // Let the parent try to handle the error.
         var result = parentZoneDelegate.handleError(targetZone, error);
         if (result) {
-            this._failCallback(error);
+            this.failCallback(error);
             this._alreadyErrored = true;
         }
         return false;
@@ -2761,6 +3164,7 @@ var AsyncTestZoneSpec = (function () {
             this._finishCallbackIfDone();
         }
     };
+    AsyncTestZoneSpec.symbolParentUnresolved = Zone.__symbol__('parentUnresolved');
     return AsyncTestZoneSpec;
 }());
 // Export the class so that new instances can be created with proper
@@ -2774,16 +3178,174 @@ Zone['AsyncTestZoneSpec'] = AsyncTestZoneSpec;
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
+Zone.__load_patch('asynctest', function (global, Zone, api) {
+    /**
+     * Wraps a test function in an asynchronous test zone. The test will automatically
+     * complete when all asynchronous calls within this zone are done.
+     */
+    Zone[api.symbol('asyncTest')] = function asyncTest(fn) {
+        // If we're running using the Jasmine test framework, adapt to call the 'done'
+        // function when asynchronous activity is finished.
+        if (global.jasmine) {
+            // Not using an arrow function to preserve context passed from call site
+            return function (done) {
+                if (!done) {
+                    // if we run beforeEach in @angular/core/testing/testing_internal then we get no done
+                    // fake it here and assume sync.
+                    done = function () { };
+                    done.fail = function (e) {
+                        throw e;
+                    };
+                }
+                runInTestZone(fn, this, done, function (err) {
+                    if (typeof err === 'string') {
+                        return done.fail(new Error(err));
+                    }
+                    else {
+                        done.fail(err);
+                    }
+                });
+            };
+        }
+        // Otherwise, return a promise which will resolve when asynchronous activity
+        // is finished. This will be correctly consumed by the Mocha framework with
+        // it('...', async(myFn)); or can be used in a custom framework.
+        // Not using an arrow function to preserve context passed from call site
+        return function () {
+            var _this = this;
+            return new Promise(function (finishCallback, failCallback) {
+                runInTestZone(fn, _this, finishCallback, failCallback);
+            });
+        };
+    };
+    function runInTestZone(fn, context, finishCallback, failCallback) {
+        var currentZone = Zone.current;
+        var AsyncTestZoneSpec = Zone['AsyncTestZoneSpec'];
+        if (AsyncTestZoneSpec === undefined) {
+            throw new Error('AsyncTestZoneSpec is needed for the async() test helper but could not be found. ' +
+                'Please make sure that your environment includes zone.js/dist/async-test.js');
+        }
+        var ProxyZoneSpec = Zone['ProxyZoneSpec'];
+        if (ProxyZoneSpec === undefined) {
+            throw new Error('ProxyZoneSpec is needed for the async() test helper but could not be found. ' +
+                'Please make sure that your environment includes zone.js/dist/proxy.js');
+        }
+        var proxyZoneSpec = ProxyZoneSpec.get();
+        ProxyZoneSpec.assertPresent();
+        // We need to create the AsyncTestZoneSpec outside the ProxyZone.
+        // If we do it in ProxyZone then we will get to infinite recursion.
+        var proxyZone = Zone.current.getZoneWith('ProxyZoneSpec');
+        var previousDelegate = proxyZoneSpec.getDelegate();
+        proxyZone.parent.run(function () {
+            var testZoneSpec = new AsyncTestZoneSpec(function () {
+                // Need to restore the original zone.
+                if (proxyZoneSpec.getDelegate() == testZoneSpec) {
+                    // Only reset the zone spec if it's
+                    // sill this one. Otherwise, assume
+                    // it's OK.
+                    proxyZoneSpec.setDelegate(previousDelegate);
+                }
+                testZoneSpec.unPatchPromiseForTest();
+                currentZone.run(function () {
+                    finishCallback();
+                });
+            }, function (error) {
+                // Need to restore the original zone.
+                if (proxyZoneSpec.getDelegate() == testZoneSpec) {
+                    // Only reset the zone spec if it's sill this one. Otherwise, assume it's OK.
+                    proxyZoneSpec.setDelegate(previousDelegate);
+                }
+                testZoneSpec.unPatchPromiseForTest();
+                currentZone.run(function () {
+                    failCallback(error);
+                });
+            }, 'test');
+            proxyZoneSpec.setDelegate(testZoneSpec);
+            testZoneSpec.patchPromiseForTest();
+        });
+        return Zone.current.runGuarded(fn, context);
+    }
+});
+
+/**
+ * @license
+ * Copyright Google Inc. All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
+var __read = (undefined && undefined.__read) || function (o, n) {
+    var m = typeof Symbol === "function" && o[Symbol.iterator];
+    if (!m) return o;
+    var i = m.call(o), r, ar = [], e;
+    try {
+        while ((n === void 0 || n-- > 0) && !(r = i.next()).done) ar.push(r.value);
+    }
+    catch (error) { e = { error: error }; }
+    finally {
+        try {
+            if (r && !r.done && (m = i["return"])) m.call(i);
+        }
+        finally { if (e) throw e.error; }
+    }
+    return ar;
+};
+var __spread = (undefined && undefined.__spread) || function () {
+    for (var ar = [], i = 0; i < arguments.length; i++) ar = ar.concat(__read(arguments[i]));
+    return ar;
+};
 (function (global) {
-    var Scheduler = (function () {
+    var OriginalDate = global.Date;
+    var FakeDate = /** @class */ (function () {
+        function FakeDate() {
+            if (arguments.length === 0) {
+                var d = new OriginalDate();
+                d.setTime(FakeDate.now());
+                return d;
+            }
+            else {
+                var args = Array.prototype.slice.call(arguments);
+                return new (OriginalDate.bind.apply(OriginalDate, __spread([void 0], args)))();
+            }
+        }
+        FakeDate.now = function () {
+            var fakeAsyncTestZoneSpec = Zone.current.get('FakeAsyncTestZoneSpec');
+            if (fakeAsyncTestZoneSpec) {
+                return fakeAsyncTestZoneSpec.getCurrentRealTime() + fakeAsyncTestZoneSpec.getCurrentTime();
+            }
+            return OriginalDate.now.apply(this, arguments);
+        };
+        return FakeDate;
+    }());
+    FakeDate.UTC = OriginalDate.UTC;
+    FakeDate.parse = OriginalDate.parse;
+    // keep a reference for zone patched timer function
+    var timers = {
+        setTimeout: global.setTimeout,
+        setInterval: global.setInterval,
+        clearTimeout: global.clearTimeout,
+        clearInterval: global.clearInterval
+    };
+    var Scheduler = /** @class */ (function () {
         function Scheduler() {
             // Next scheduler id.
-            this.nextId = 0;
+            this.nextId = 1;
             // Scheduler queue with the tuple of end time and callback function - sorted by end time.
             this._schedulerQueue = [];
             // Current simulated time in millis.
             this._currentTime = 0;
+            // Current real time in millis.
+            this._currentRealTime = OriginalDate.now();
         }
+        Scheduler.prototype.getCurrentTime = function () {
+            return this._currentTime;
+        };
+        Scheduler.prototype.getCurrentRealTime = function () {
+            return this._currentRealTime;
+        };
+        Scheduler.prototype.setCurrentRealTime = function (realTime) {
+            this._currentRealTime = realTime;
+        };
         Scheduler.prototype.scheduleFunction = function (cb, delay, args, isPeriodic, isRequestAnimationFrame, id) {
             if (args === void 0) { args = []; }
             if (isPeriodic === void 0) { isPeriodic = false; }
@@ -2848,7 +3410,11 @@ Zone['AsyncTestZoneSpec'] = AsyncTestZoneSpec;
                     }
                 }
             }
+            lastCurrentTime = this._currentTime;
             this._currentTime = finalTime;
+            if (doTick) {
+                doTick(this._currentTime - lastCurrentTime);
+            }
         };
         Scheduler.prototype.flush = function (limit, flushPeriodic, doTick) {
             if (limit === void 0) { limit = 20; }
@@ -2904,7 +3470,7 @@ Zone['AsyncTestZoneSpec'] = AsyncTestZoneSpec;
         };
         return Scheduler;
     }());
-    var FakeAsyncTestZoneSpec = (function () {
+    var FakeAsyncTestZoneSpec = /** @class */ (function () {
         function FakeAsyncTestZoneSpec(namePrefix, trackPendingRequestAnimationFrame, macroTaskOptions) {
             if (trackPendingRequestAnimationFrame === void 0) { trackPendingRequestAnimationFrame = false; }
             this.trackPendingRequestAnimationFrame = trackPendingRequestAnimationFrame;
@@ -2915,6 +3481,7 @@ Zone['AsyncTestZoneSpec'] = AsyncTestZoneSpec;
             this._uncaughtPromiseErrors = Promise[Zone.__symbol__('uncaughtPromiseErrors')];
             this.pendingPeriodicTimers = [];
             this.pendingTimers = [];
+            this.patchDateLocked = false;
             this.properties = { 'FakeAsyncTestZoneSpec': this };
             this.name = 'fakeAsyncTestZone for ' + namePrefix;
             // in case user can't access the construction of FakeAsyncTestSpec
@@ -2936,14 +3503,14 @@ Zone['AsyncTestZoneSpec'] = AsyncTestZoneSpec;
                     args[_i] = arguments[_i];
                 }
                 fn.apply(global, args);
-                if (_this._lastError === null) {
+                if (_this._lastError === null) { // Success
                     if (completers.onSuccess != null) {
                         completers.onSuccess.apply(global);
                     }
                     // Flush microtasks only on success.
                     _this.flushMicrotasks();
                 }
-                else {
+                else { // Failure
                     if (completers.onError != null) {
                         completers.onError.apply(global);
                     }
@@ -2994,11 +3561,7 @@ Zone['AsyncTestZoneSpec'] = AsyncTestZoneSpec;
             FakeAsyncTestZoneSpec._removeTimer(this.pendingTimers, id);
             this._scheduler.removeScheduledFunctionWithId(id);
         };
-        FakeAsyncTestZoneSpec.prototype._setInterval = function (fn, interval) {
-            var args = [];
-            for (var _i = 2; _i < arguments.length; _i++) {
-                args[_i - 2] = arguments[_i];
-            }
+        FakeAsyncTestZoneSpec.prototype._setInterval = function (fn, interval, args) {
             var id = this._scheduler.nextId;
             var completers = { onSuccess: null, onError: this._dequeuePeriodicTimer(id) };
             var cb = this._fnAndFlush(fn, completers);
@@ -3018,6 +3581,50 @@ Zone['AsyncTestZoneSpec'] = AsyncTestZoneSpec;
             this._uncaughtPromiseErrors.length = 0;
             this._lastError = null;
             throw error;
+        };
+        FakeAsyncTestZoneSpec.prototype.getCurrentTime = function () {
+            return this._scheduler.getCurrentTime();
+        };
+        FakeAsyncTestZoneSpec.prototype.getCurrentRealTime = function () {
+            return this._scheduler.getCurrentRealTime();
+        };
+        FakeAsyncTestZoneSpec.prototype.setCurrentRealTime = function (realTime) {
+            this._scheduler.setCurrentRealTime(realTime);
+        };
+        FakeAsyncTestZoneSpec.patchDate = function () {
+            if (global['Date'] === FakeDate) {
+                // already patched
+                return;
+            }
+            global['Date'] = FakeDate;
+            FakeDate.prototype = OriginalDate.prototype;
+            // try check and reset timers
+            // because jasmine.clock().install() may
+            // have replaced the global timer
+            FakeAsyncTestZoneSpec.checkTimerPatch();
+        };
+        FakeAsyncTestZoneSpec.resetDate = function () {
+            if (global['Date'] === FakeDate) {
+                global['Date'] = OriginalDate;
+            }
+        };
+        FakeAsyncTestZoneSpec.checkTimerPatch = function () {
+            if (global.setTimeout !== timers.setTimeout) {
+                global.setTimeout = timers.setTimeout;
+                global.clearTimeout = timers.clearTimeout;
+            }
+            if (global.setInterval !== timers.setInterval) {
+                global.setInterval = timers.setInterval;
+                global.clearInterval = timers.clearInterval;
+            }
+        };
+        FakeAsyncTestZoneSpec.prototype.lockDatePatch = function () {
+            this.patchDateLocked = true;
+            FakeAsyncTestZoneSpec.patchDate();
+        };
+        FakeAsyncTestZoneSpec.prototype.unlockDatePatch = function () {
+            this.patchDateLocked = false;
+            FakeAsyncTestZoneSpec.resetDate();
         };
         FakeAsyncTestZoneSpec.prototype.tick = function (millis, doTick) {
             if (millis === void 0) { millis = 0; }
@@ -3075,12 +3682,13 @@ Zone['AsyncTestZoneSpec'] = AsyncTestZoneSpec;
                 case 'macroTask':
                     switch (task.source) {
                         case 'setTimeout':
-                            task.data['handleId'] =
-                                this._setTimeout(task.invoke, task.data['delay'], task.data['args']);
+                            task.data['handleId'] = this._setTimeout(task.invoke, task.data['delay'], Array.prototype.slice.call(task.data['args'], 2));
+                            break;
+                        case 'setImmediate':
+                            task.data['handleId'] = this._setTimeout(task.invoke, 0, Array.prototype.slice.call(task.data['args'], 1));
                             break;
                         case 'setInterval':
-                            task.data['handleId'] =
-                                this._setInterval(task.invoke, task.data['delay'], task.data['args']);
+                            task.data['handleId'] = this._setInterval(task.invoke, task.data['delay'], Array.prototype.slice.call(task.data['args'], 2));
                             break;
                         case 'XMLHttpRequest.send':
                             throw new Error('Cannot make XHRs from within a fake async test. Request URL: ' +
@@ -3141,6 +3749,17 @@ Zone['AsyncTestZoneSpec'] = AsyncTestZoneSpec;
                     return delegate.cancelTask(target, task);
             }
         };
+        FakeAsyncTestZoneSpec.prototype.onInvoke = function (delegate, current, target, callback, applyThis, applyArgs, source) {
+            try {
+                FakeAsyncTestZoneSpec.patchDate();
+                return delegate.invoke(target, callback, applyThis, applyArgs, source);
+            }
+            finally {
+                if (!this.patchDateLocked) {
+                    FakeAsyncTestZoneSpec.resetDate();
+                }
+            }
+        };
         FakeAsyncTestZoneSpec.prototype.findMacroTaskOption = function (task) {
             if (!this.macroTaskOptions) {
                 return null;
@@ -3163,6 +3782,219 @@ Zone['AsyncTestZoneSpec'] = AsyncTestZoneSpec;
     // constructor params.
     Zone['FakeAsyncTestZoneSpec'] = FakeAsyncTestZoneSpec;
 })(typeof window === 'object' && window || typeof self === 'object' && self || global);
+
+/**
+ * @license
+ * Copyright Google Inc. All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
+Zone.__load_patch('fakeasync', function (global, Zone, api) {
+    var FakeAsyncTestZoneSpec = Zone && Zone['FakeAsyncTestZoneSpec'];
+    var ProxyZoneSpec = Zone && Zone['ProxyZoneSpec'];
+    var _fakeAsyncTestZoneSpec = null;
+    /**
+     * Clears out the shared fake async zone for a test.
+     * To be called in a global `beforeEach`.
+     *
+     * @experimental
+     */
+    function resetFakeAsyncZone() {
+        if (_fakeAsyncTestZoneSpec) {
+            _fakeAsyncTestZoneSpec.unlockDatePatch();
+        }
+        _fakeAsyncTestZoneSpec = null;
+        // in node.js testing we may not have ProxyZoneSpec in which case there is nothing to reset.
+        ProxyZoneSpec && ProxyZoneSpec.assertPresent().resetDelegate();
+    }
+    /**
+     * Wraps a function to be executed in the fakeAsync zone:
+     * - microtasks are manually executed by calling `flushMicrotasks()`,
+     * - timers are synchronous, `tick()` simulates the asynchronous passage of time.
+     *
+     * If there are any pending timers at the end of the function, an exception will be thrown.
+     *
+     * Can be used to wrap inject() calls.
+     *
+     * ## Example
+     *
+     * {@example core/testing/ts/fake_async.ts region='basic'}
+     *
+     * @param fn
+     * @returns The function wrapped to be executed in the fakeAsync zone
+     *
+     * @experimental
+     */
+    function fakeAsync(fn) {
+        // Not using an arrow function to preserve context passed from call site
+        return function () {
+            var args = [];
+            for (var _i = 0; _i < arguments.length; _i++) {
+                args[_i] = arguments[_i];
+            }
+            var proxyZoneSpec = ProxyZoneSpec.assertPresent();
+            if (Zone.current.get('FakeAsyncTestZoneSpec')) {
+                throw new Error('fakeAsync() calls can not be nested');
+            }
+            try {
+                // in case jasmine.clock init a fakeAsyncTestZoneSpec
+                if (!_fakeAsyncTestZoneSpec) {
+                    if (proxyZoneSpec.getDelegate() instanceof FakeAsyncTestZoneSpec) {
+                        throw new Error('fakeAsync() calls can not be nested');
+                    }
+                    _fakeAsyncTestZoneSpec = new FakeAsyncTestZoneSpec();
+                }
+                var res = void 0;
+                var lastProxyZoneSpec = proxyZoneSpec.getDelegate();
+                proxyZoneSpec.setDelegate(_fakeAsyncTestZoneSpec);
+                _fakeAsyncTestZoneSpec.lockDatePatch();
+                try {
+                    res = fn.apply(this, args);
+                    flushMicrotasks();
+                }
+                finally {
+                    proxyZoneSpec.setDelegate(lastProxyZoneSpec);
+                }
+                if (_fakeAsyncTestZoneSpec.pendingPeriodicTimers.length > 0) {
+                    throw new Error(_fakeAsyncTestZoneSpec.pendingPeriodicTimers.length + " " +
+                        "periodic timer(s) still in the queue.");
+                }
+                if (_fakeAsyncTestZoneSpec.pendingTimers.length > 0) {
+                    throw new Error(_fakeAsyncTestZoneSpec.pendingTimers.length + " timer(s) still in the queue.");
+                }
+                return res;
+            }
+            finally {
+                resetFakeAsyncZone();
+            }
+        };
+    }
+    function _getFakeAsyncZoneSpec() {
+        if (_fakeAsyncTestZoneSpec == null) {
+            _fakeAsyncTestZoneSpec = Zone.current.get('FakeAsyncTestZoneSpec');
+            if (_fakeAsyncTestZoneSpec == null) {
+                throw new Error('The code should be running in the fakeAsync zone to call this function');
+            }
+        }
+        return _fakeAsyncTestZoneSpec;
+    }
+    /**
+     * Simulates the asynchronous passage of time for the timers in the fakeAsync zone.
+     *
+     * The microtasks queue is drained at the very start of this function and after any timer callback
+     * has been executed.
+     *
+     * ## Example
+     *
+     * {@example core/testing/ts/fake_async.ts region='basic'}
+     *
+     * @experimental
+     */
+    function tick(millis) {
+        if (millis === void 0) { millis = 0; }
+        _getFakeAsyncZoneSpec().tick(millis);
+    }
+    /**
+     * Simulates the asynchronous passage of time for the timers in the fakeAsync zone by
+     * draining the macrotask queue until it is empty. The returned value is the milliseconds
+     * of time that would have been elapsed.
+     *
+     * @param maxTurns
+     * @returns The simulated time elapsed, in millis.
+     *
+     * @experimental
+     */
+    function flush(maxTurns) {
+        return _getFakeAsyncZoneSpec().flush(maxTurns);
+    }
+    /**
+     * Discard all remaining periodic tasks.
+     *
+     * @experimental
+     */
+    function discardPeriodicTasks() {
+        var zoneSpec = _getFakeAsyncZoneSpec();
+        var pendingTimers = zoneSpec.pendingPeriodicTimers;
+        zoneSpec.pendingPeriodicTimers.length = 0;
+    }
+    /**
+     * Flush any pending microtasks.
+     *
+     * @experimental
+     */
+    function flushMicrotasks() {
+        _getFakeAsyncZoneSpec().flushMicrotasks();
+    }
+    Zone[api.symbol('fakeAsyncTest')] =
+        { resetFakeAsyncZone: resetFakeAsyncZone, flushMicrotasks: flushMicrotasks, discardPeriodicTasks: discardPeriodicTasks, tick: tick, flush: flush, fakeAsync: fakeAsync };
+});
+
+/**
+ * @license
+ * Copyright Google Inc. All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
+/**
+ * Promise for async/fakeAsync zoneSpec test
+ * can support async operation which not supported by zone.js
+ * such as
+ * it ('test jsonp in AsyncZone', async() => {
+ *   new Promise(res => {
+ *     jsonp(url, (data) => {
+ *       // success callback
+ *       res(data);
+ *     });
+ *   }).then((jsonpResult) => {
+ *     // get jsonp result.
+ *
+ *     // user will expect AsyncZoneSpec wait for
+ *     // then, but because jsonp is not zone aware
+ *     // AsyncZone will finish before then is called.
+ *   });
+ * });
+ */
+Zone.__load_patch('promisefortest', function (global, Zone, api) {
+    var symbolState = api.symbol('state');
+    var UNRESOLVED = null;
+    var symbolParentUnresolved = api.symbol('parentUnresolved');
+    // patch Promise.prototype.then to keep an internal
+    // number for tracking unresolved chained promise
+    // we will decrease this number when the parent promise
+    // being resolved/rejected and chained promise was
+    // scheduled as a microTask.
+    // so we can know such kind of chained promise still
+    // not resolved in AsyncTestZone
+    Promise[api.symbol('patchPromiseForTest')] = function patchPromiseForTest() {
+        var oriThen = Promise[Zone.__symbol__('ZonePromiseThen')];
+        if (oriThen) {
+            return;
+        }
+        oriThen = Promise[Zone.__symbol__('ZonePromiseThen')] = Promise.prototype.then;
+        Promise.prototype.then = function () {
+            var chained = oriThen.apply(this, arguments);
+            if (this[symbolState] === UNRESOLVED) {
+                // parent promise is unresolved.
+                var asyncTestZoneSpec = Zone.current.get('AsyncTestZoneSpec');
+                if (asyncTestZoneSpec) {
+                    asyncTestZoneSpec.unresolvedChainedPromiseCount++;
+                    chained[symbolParentUnresolved] = true;
+                }
+            }
+            return chained;
+        };
+    };
+    Promise[api.symbol('unPatchPromiseForTest')] = function unpatchPromiseForTest() {
+        // restore origin then
+        var oriThen = Promise[Zone.__symbol__('ZonePromiseThen')];
+        if (oriThen) {
+            Promise.prototype.then = oriThen;
+            Promise[Zone.__symbol__('ZonePromiseThen')] = undefined;
+        }
+    };
+});
 
 /**
  * @license

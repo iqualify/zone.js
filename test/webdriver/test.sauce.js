@@ -36,22 +36,6 @@ const desiredCapabilities = {
   ie11: {browserName: 'internet explorer', platform: 'Windows 10', version: '11'},
   andriod44: {browserName: 'android', platform: 'Linux', version: '4.4'},
   android51: {browserName: 'android', platform: 'Linux', version: '5.1'},
-  android60: {
-    deviceName: 'Android GoogleAPI Emulator',
-    browserName: 'Chrome',
-    platformName: 'Android',
-    platformVersion: '6.0',
-    deviceOrientation: 'portrait',
-    appiumVersion: '1.7.2'
-  },
-  android71: {
-    deviceName: 'Android GoogleAPI Emulator',
-    browserName: 'Chrome',
-    platformName: 'Android',
-    platformVersion: '7.1',
-    deviceOrientation: 'portrait',
-    appiumVersion: '1.7.2'
-  }
 };
 
 const errors = [];

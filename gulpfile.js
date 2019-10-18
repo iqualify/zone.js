@@ -10,16 +10,22 @@
 var gulp = require('gulp');
 var rollup = require('gulp-rollup');
 var rename = require('gulp-rename');
-var uglify = require('gulp-uglify');
+var terser = require('gulp-terser');
 var pump = require('pump');
 var path = require('path');
 var spawn = require('child_process').spawn;
 const os = require('os');
 
-function generateScript(inFile, outFile, minify, callback) {
-  inFile = path.join('./build-esm/', inFile).replace(/\.ts$/, '.js');
+function generateScript(inFile, outFile, minify, callback, format, inDir) {
+  if (!format) {
+    format = 'umd';
+  }
+  if (!inDir) {
+    inDir = './build-esm/'
+  }
+  inFile = path.join(inDir, inFile).replace(/\.ts$/, '.js');
   var parts = [
-    gulp.src('./build-esm/lib/**/*.js')
+    gulp.src(inDir + 'lib/**/*.js')
         .pipe(rollup({
           input: inFile,
           onwarn: function(warning) {
@@ -30,7 +36,7 @@ function generateScript(inFile, outFile, minify, callback) {
             console.error(warning.message);
           },
           output: {
-            format: 'umd',
+            format: format,
             name: 'zone',
             banner: '/**\n' +
                 '* @license\n' +
@@ -59,7 +65,9 @@ function generateScript(inFile, outFile, minify, callback) {
         .pipe(rename(outFile)),
   ];
   if (minify) {
-    parts.push(uglify());
+    parts.push(terser({
+      ecma: format === 'es' ? 6 : 5, // specify one of: 5, 6, 7 or 8
+    }));
   }
   parts.push(gulp.dest('./dist'));
   pump(parts, callback);
@@ -98,6 +106,10 @@ gulp.task('compile-esm', function(cb) {
   tsc('tsconfig-esm.json', cb);
 });
 
+gulp.task('compile-esm-2015', function(cb) {
+  tsc('tsconfig-esm-2015.json', cb);
+});
+
 gulp.task('compile-esm-node', function(cb) {
   tsc('tsconfig-esm-node.json', cb);
 });
@@ -115,16 +127,39 @@ gulp.task('build/zone-node.js', ['compile-esm-node'], function(cb) {
 
 // Zone for the browser.
 gulp.task('build/zone.js', ['compile-esm'], function(cb) {
-  return generateScript('./lib/browser/rollup-main.ts', 'zone.js', false, cb);
+  return generateScript('./lib/browser/rollup-legacy-main.ts', 'zone.js', false, cb);
 });
 
 gulp.task('build/zone.min.js', ['compile-esm'], function(cb) {
-  return generateScript('./lib/browser/rollup-main.ts', 'zone.min.js', true, cb);
+  return generateScript('./lib/browser/rollup-legacy-main.ts', 'zone.min.js', true, cb);
+});
+
+// Zone for the evergreen browser.
+gulp.task('build/zone-evergreen.js', ['compile-esm-2015'], function(cb) {
+  return generateScript('./lib/browser/rollup-main.ts', 'zone-evergreen.js', false, cb, 'es', './build-esm-2015/');
+});
+
+gulp.task('build/zone-evergreen.min.js', ['compile-esm-2015'], function(cb) {
+  return generateScript('./lib/browser/rollup-main.ts', 'zone-evergreen.min.js', true, cb, 'es', './build-esm-2015/');
+});
+
+// Zone legacy patch for the legacy browser.
+gulp.task('build/zone-legacy.js', ['compile-esm'], function(cb) {
+  return generateScript('./lib/browser/browser-legacy.ts', 'zone-legacy.js', false, cb);
+});
+
+gulp.task('build/zone-legacy.min.js', ['compile-esm'], function(cb) {
+  return generateScript('./lib/browser/browser-legacy.ts', 'zone-legacy.min.js', true, cb);
 });
 
 // Zone test bundle for the browser.
 gulp.task('build/zone-testing-bundle.js', ['compile-esm'], function(cb) {
-  return generateScript('./lib/browser/rollup-test-main.ts', 'zone-testing-bundle.js', false, cb);
+  return generateScript('./lib/browser/rollup-legacy-test-main.ts', 'zone-testing-bundle.js', false, cb);
+});
+
+// Zone test bundle for the evergreen browser.
+gulp.task('build/zone-evergreen-testing-bundle.js', ['compile-esm'], function(cb) {
+  return generateScript('./lib/browser/rollup-test-main.ts', 'zone-evergreen-testing-bundle.js', false, cb);
 });
 
 // Zone test bundle for node.
@@ -149,6 +184,27 @@ gulp.task('build/zone-error.js', ['compile-esm'], function(cb) {
 gulp.task('build/zone-error.min.js', ['compile-esm'], function(cb) {
   return generateScript('./lib/common/error-rewrite.ts', 'zone-error.min.js', true, cb);
 });
+
+gulp.task('build/zone-patch-canvas.js', ['compile-esm'], function(cb) {
+  return generateScript(
+    './lib/browser/canvas.ts', 'zone-patch-canvas.js', false, cb);
+});
+
+gulp.task('build/zone-patch-canvas.min.js', ['compile-esm'], function(cb) {
+  return generateScript(
+    './lib/browser/canvas.ts', 'zone-patch-canvas.min.js', true, cb);
+});
+
+gulp.task('build/zone-patch-fetch.js', ['compile-esm'], function(cb) {
+  return generateScript(
+    './lib/common/fetch.ts', 'zone-patch-fetch.js', false, cb);
+});
+
+gulp.task('build/zone-patch-fetch.min.js', ['compile-esm'], function(cb) {
+  return generateScript(
+    './lib/common/fetch.ts', 'zone-patch-fetch.min.js', true, cb);
+});
+
 
 gulp.task('build/webapis-media-query.js', ['compile-esm'], function(cb) {
   return generateScript(
@@ -347,12 +403,21 @@ gulp.task('build', [
   'build/zone.js',
   'build/zone.js.d.ts',
   'build/zone.min.js',
+  'build/zone-evergreen.js',
+  'build/zone-evergreen.min.js',
+  'build/zone-legacy.js',
+  'build/zone-legacy.min.js',
   'build/zone-testing.js',
   'build/zone-testing-bundle.js',
+  'build/zone-evergreen-testing-bundle.js',
   'build/zone-testing-node-bundle.js',
   'build/zone-error.js',
   'build/zone-error.min.js',
   'build/zone-node.js',
+  'build/zone-patch-canvas.js',
+  'build/zone-patch-canvas.min.js',
+  'build/zone-patch-fetch.js',
+  'build/zone-patch-fetch.min.js',
   'build/webapis-media-query.js',
   'build/webapis-media-query.min.js',
   'build/webapis-notification.js',
@@ -408,7 +473,6 @@ function nodeTest(specFiles, cb) {
   if (args.length > 3) {
     require('./build/test/test-env-setup-jasmine' + args[3]);
   }
-  var JasmineRunner = require('jasmine');
   var JasmineRunner = require('jasmine');
   var jrunner = new JasmineRunner();
 

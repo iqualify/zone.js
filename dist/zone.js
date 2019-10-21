@@ -1393,6 +1393,16 @@ function patchProperty(obj, prop, prototype) {
             originalDescSet.apply(target, NULL_ON_PROP_VALUE);
         }
         if (typeof newValue === 'function') {
+            // BEGIN IQFY PATCH - do not patch onLoad property, prevents braking loading a custom question
+            var isIE11 = !!window.MSInputMethodContext && !!document.documentMode;
+            var isEdge = /Edge/.test(navigator.userAgent);
+            var isBrowserAffected = isIE11 || isEdge;
+            if (isBrowserAffected && eventName === 'load') {
+                if (target && target.getAttribute && target.getAttribute('src').indexOf('cdn-tasks') > -1) {
+                    newValue = function() {};
+                }
+            }
+            // END IQFY PATCH
             target[eventNameSymbol] = newValue;
             target.addEventListener(eventName, wrapFn, false);
         }
